@@ -1,21 +1,4 @@
-import pool from '../database/connection';
-
-export interface ArtisanProfile {
-  id: number;
-  userId: number;
-  skillCategory: string;
-  primarySkill: string;
-  profilePhotoUrl?: string;
-  governmentIdUrl?: string;
-  idType?: 'NIN' | 'BVN';
-  verificationStatus: 'unsubmitted' | 'pending' | 'verified' | 'rejected' | 'suspended';
-  adminNotes?: string;
-  submittedAt?: Date;
-  verifiedAt?: Date;
-  rejectedAt?: Date;
-  createdAt: Date;
-  updatedAt: Date;
-}
+import { db, ArtisanProfile, VerificationHistory } from '../database/connection';
 
 export interface OnboardingData {
   userId: number;
@@ -34,224 +17,118 @@ export interface VerificationDecision {
 }
 
 export class ArtisanService {
-  /**
-   * Get artisan profile by user ID
-   */
   static async getProfileByUserId(userId: number): Promise<ArtisanProfile | null> {
-    const result = await pool.query(
-      `SELECT 
-        id, user_id as "userId", skill_category as "skillCategory", 
-        primary_skill as "primarySkill", profile_photo_url as "profilePhotoUrl",
-        government_id_url as "governmentIdUrl", id_type as "idType",
-        verification_status as "verificationStatus", admin_notes as "adminNotes",
-        submitted_at as "submittedAt", verified_at as "verifiedAt", 
-        rejected_at as "rejectedAt", created_at as "createdAt", updated_at as "updatedAt"
-       FROM artisan_profiles 
-       WHERE user_id = $1`,
-      [userId]
-    );
-    
-    return result.rows[0] || null;
+    await db.read();
+    return db.data!.artisanProfiles.find(p => p.userId === userId) || null;
   }
   
-  /**
-   * Create or initialize artisan profile
-   */
   static async initializeProfile(userId: number): Promise<ArtisanProfile> {
-    const result = await pool.query(
-      `INSERT INTO artisan_profiles (user_id, skill_category, primary_skill, verification_status) 
-       VALUES ($1, '', '', 'unsubmitted')
-       ON CONFLICT (user_id) DO NOTHING
-       RETURNING 
-        id, user_id as "userId", skill_category as "skillCategory", 
-        primary_skill as "primarySkill", verification_status as "verificationStatus",
-        created_at as "createdAt", updated_at as "updatedAt"`,
-      [userId]
-    );
+    await db.read();
+    let profile = db.data!.artisanProfiles.find(p => p.userId === userId);
     
-    if (result.rows.length === 0) {
-      // Profile already exists, fetch it
-      return (await this.getProfileByUserId(userId))!;
+    if (!profile) {
+      profile = {
+        id: db.data!._meta.nextArtisanProfileId++,
+        userId,
+        skillCategory: '',
+        primarySkill: '',
+        verificationStatus: 'unsubmitted',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      
+      db.data!.artisanProfiles.push(profile);
+      await db.write();
     }
     
-    return result.rows[0];
+    return profile;
   }
   
-  /**
-   * Submit onboarding (artisan submits documents)
-   */
   static async submitOnboarding(data: OnboardingData): Promise<ArtisanProfile> {
-    const client = await pool.connect();
+    await db.read();
+    let profile = db.data!.artisanProfiles.find(p => p.userId === data.userId);
     
-    try {
-      await client.query('BEGIN');
-      
-      // Update profile with onboarding data
-      const result = await client.query(
-        `UPDATE artisan_profiles 
-         SET 
-          skill_category = $1,
-          primary_skill = $2,
-          profile_photo_url = $3,
-          government_id_url = $4,
-          id_type = $5,
-          verification_status = 'pending',
-          submitted_at = CURRENT_TIMESTAMP,
-          updated_at = CURRENT_TIMESTAMP
-         WHERE user_id = $6
-         RETURNING 
-          id, user_id as "userId", skill_category as "skillCategory", 
-          primary_skill as "primarySkill", profile_photo_url as "profilePhotoUrl",
-          government_id_url as "governmentIdUrl", id_type as "idType",
-          verification_status as "verificationStatus", submitted_at as "submittedAt",
-          created_at as "createdAt", updated_at as "updatedAt"`,
-        [
-          data.skillCategory,
-          data.primarySkill,
-          data.profilePhotoUrl,
-          data.governmentIdUrl,
-          data.idType,
-          data.userId
-        ]
-      );
-      
-      if (result.rows.length === 0) {
-        throw new Error('Artisan profile not found');
-      }
-      
-      // Log history
-      await client.query(
-        `INSERT INTO verification_history (artisan_profile_id, previous_status, new_status, reason)
-         VALUES ($1, 'unsubmitted', 'pending', 'Initial submission')`,
-        [result.rows[0].id]
-      );
-      
-      await client.query('COMMIT');
-      return result.rows[0];
-      
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
+    if (!profile) {
+      profile = await this.initializeProfile(data.userId);
+      await db.read();
     }
+    
+    profile.skillCategory = data.skillCategory;
+    profile.primarySkill = data.primarySkill;
+    profile.profilePhotoUrl = data.profilePhotoUrl;
+    profile.governmentIdUrl = data.governmentIdUrl;
+    profile.idType = data.idType;
+    profile.verificationStatus = 'pending';
+    profile.submittedAt = new Date().toISOString();
+    profile.updatedAt = new Date().toISOString();
+    
+    const history: VerificationHistory = {
+      id: db.data!._meta.nextHistoryId++,
+      artisanProfileId: profile.id,
+      previousStatus: 'unsubmitted',
+      newStatus: 'pending',
+      changedBy: 'system',
+      reason: 'Initial submission',
+      createdAt: new Date().toISOString(),
+    };
+    
+    db.data!.verificationHistory.push(history);
+    await db.write();
+    
+    return profile;
   }
   
-  /**
-   * Get all artisan profiles (admin)
-   */
-  static async getAllProfiles(status?: string): Promise<ArtisanProfile[]> {
-    let query = `
-      SELECT 
-        ap.id, ap.user_id as "userId", ap.skill_category as "skillCategory", 
-        ap.primary_skill as "primarySkill", ap.profile_photo_url as "profilePhotoUrl",
-        ap.government_id_url as "governmentIdUrl", ap.id_type as "idType",
-        ap.verification_status as "verificationStatus", ap.admin_notes as "adminNotes",
-        ap.submitted_at as "submittedAt", ap.verified_at as "verifiedAt", 
-        ap.rejected_at as "rejectedAt", ap.created_at as "createdAt", ap.updated_at as "updatedAt",
-        u.name as "artisanName", u.phone as "artisanPhone"
-      FROM artisan_profiles ap
-      JOIN users u ON ap.user_id = u.id
-    `;
-    
-    const params: any[] = [];
+  static async getAllProfiles(status?: string): Promise<any[]> {
+    await db.read();
+    let profiles = db.data!.artisanProfiles;
     
     if (status) {
-      query += ' WHERE ap.verification_status = $1';
-      params.push(status);
+      profiles = profiles.filter(p => p.verificationStatus === status);
     }
     
-    query += ' ORDER BY ap.submitted_at DESC';
-    
-    const result = await pool.query(query, params);
-    return result.rows;
+    return profiles.map(profile => {
+      const user = db.data!.users.find(u => u.id === profile.userId);
+      return {
+        ...profile,
+        artisanName: user?.name,
+        artisanPhone: user?.phone,
+      };
+    });
   }
   
-  /**
-   * Update verification status (admin action)
-   */
   static async updateVerificationStatus(decision: VerificationDecision): Promise<ArtisanProfile> {
-    const client = await pool.connect();
+    await db.read();
+    const profile = db.data!.artisanProfiles.find(p => p.id === decision.artisanProfileId);
     
-    try {
-      await client.query('BEGIN');
-      
-      // Get current status
-      const current = await client.query(
-        'SELECT verification_status FROM artisan_profiles WHERE id = $1',
-        [decision.artisanProfileId]
-      );
-      
-      if (current.rows.length === 0) {
-        throw new Error('Artisan profile not found');
-      }
-      
-      const previousStatus = current.rows[0].verification_status;
-      
-      // Update status
-      const timestampField = decision.status === 'verified' ? 'verified_at' 
-                           : decision.status === 'rejected' ? 'rejected_at' 
-                           : null;
-      
-      let updateQuery = `
-        UPDATE artisan_profiles 
-        SET 
-          verification_status = $1,
-          admin_notes = $2,
-          updated_at = CURRENT_TIMESTAMP
-      `;
-      
-      if (timestampField) {
-        updateQuery += `, ${timestampField} = CURRENT_TIMESTAMP`;
-      }
-      
-      updateQuery += `
-        WHERE id = $3
-        RETURNING 
-          id, user_id as "userId", skill_category as "skillCategory", 
-          primary_skill as "primarySkill", verification_status as "verificationStatus",
-          admin_notes as "adminNotes", created_at as "createdAt", updated_at as "updatedAt"
-      `;
-      
-      const result = await client.query(updateQuery, [
-        decision.status,
-        decision.adminNotes || null,
-        decision.artisanProfileId
-      ]);
-      
-      // Log history
-      await client.query(
-        `INSERT INTO verification_history (artisan_profile_id, previous_status, new_status, changed_by, reason)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [
-          decision.artisanProfileId,
-          previousStatus,
-          decision.status,
-          decision.changedBy,
-          decision.adminNotes || null
-        ]
-      );
-      
-      await client.query('COMMIT');
-      return result.rows[0];
-      
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
+    if (!profile) throw new Error('Profile not found');
+    
+    const previousStatus = profile.verificationStatus;
+    profile.verificationStatus = decision.status;
+    profile.adminNotes = decision.adminNotes;
+    profile.updatedAt = new Date().toISOString();
+    
+    if (decision.status === 'verified') profile.verifiedAt = new Date().toISOString();
+    if (decision.status === 'rejected') profile.rejectedAt = new Date().toISOString();
+    
+    const history: VerificationHistory = {
+      id: db.data!._meta.nextHistoryId++,
+      artisanProfileId: profile.id,
+      previousStatus,
+      newStatus: decision.status,
+      changedBy: decision.changedBy,
+      reason: decision.adminNotes,
+      createdAt: new Date().toISOString(),
+    };
+    
+    db.data!.verificationHistory.push(history);
+    await db.write();
+    
+    return profile;
   }
   
-  /**
-   * Check if artisan is verified
-   */
   static async isVerified(userId: number): Promise<boolean> {
-    const result = await pool.query(
-      'SELECT verification_status FROM artisan_profiles WHERE user_id = $1',
-      [userId]
-    );
-    
-    return result.rows[0]?.verification_status === 'verified';
+    await db.read();
+    const profile = db.data!.artisanProfiles.find(p => p.userId === userId);
+    return profile?.verificationStatus === 'verified';
   }
 }

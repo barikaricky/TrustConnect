@@ -1,4 +1,3 @@
-// LowDB connection for MVP (no PostgreSQL needed)
 import { Low } from 'lowdb';
 import { JSONFile } from 'lowdb/node';
 import path from 'path';
@@ -63,7 +62,7 @@ interface Database {
   };
 }
 
-// Create data directory
+// Create data directory if doesn't exist
 const dataDir = path.join(__dirname, '../../data');
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
@@ -72,8 +71,7 @@ if (!fs.existsSync(dataDir)) {
 // Initialize database
 const file = path.join(dataDir, 'db.json');
 const adapter = new JSONFile<Database>(file);
-
-const defaultData: Database = {
+const db = new Low(adapter, {
   users: [],
   otpSessions: [],
   artisanProfiles: [],
@@ -84,19 +82,29 @@ const defaultData: Database = {
     nextArtisanProfileId: 1,
     nextHistoryId: 1,
   },
-};
+});
 
-const db = new Low(adapter, defaultData);
-
-// Initialize
-(async () => {
+// Initialize database
+async function initDb() {
   await db.read();
   if (!db.data) {
-    db.data = defaultData;
+    db.data = {
+      users: [],
+      otpSessions: [],
+      artisanProfiles: [],
+      verificationHistory: [],
+      _meta: {
+        nextUserId: 1,
+        nextOtpId: 1,
+        nextArtisanProfileId: 1,
+        nextHistoryId: 1,
+      },
+    };
     await db.write();
   }
-  console.log('✅ Database initialized (LowDB)');
-})();
+}
+
+initDb();
 
 export { db, User, OTPSession, ArtisanProfile, VerificationHistory };
 export default db;
