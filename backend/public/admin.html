@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TrustConnect Admin - Artisan Verification</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: #f5f7fa;
+      color: #2c3e50;
+    }
+    
+    .header {
+      background: #1a2742;
+      color: white;
+      padding: 1.5rem 2rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .header h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+    }
+    
+    .header p {
+      color: #a0aec0;
+      font-size: 0.875rem;
+      margin-top: 0.25rem;
+    }
+    
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+    
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    
+    .stat-card {
+      background: white;
+      padding: 1.5rem;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    
+    .stat-value {
+      font-size: 2rem;
+      font-weight: bold;
+      color: #1a2742;
+    }
+    
+    .stat-label {
+      color: #718096;
+      font-size: 0.875rem;
+      margin-top: 0.5rem;
+    }
+    
+    .filters {
+      background: white;
+      padding: 1.5rem;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      margin-bottom: 2rem;
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+    }
+    
+    .filter-btn {
+      padding: 0.5rem 1rem;
+      border: 2px solid #e2e8f0;
+      background: white;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+    
+    .filter-btn:hover {
+      border-color: #3d5a9b;
+      color: #3d5a9b;
+    }
+    
+    .filter-btn.active {
+      background: #3d5a9b;
+      color: white;
+      border-color: #3d5a9b;
+    }
+    
+    .profiles-list {
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      overflow: hidden;
+    }
+    
+    .profile-item {
+      border-bottom: 1px solid #e2e8f0;
+      padding: 1.5rem;
+      display: grid;
+      grid-template-columns: auto 1fr auto auto;
+      gap: 1.5rem;
+      align-items: center;
+    }
+    
+    .profile-item:last-child {
+      border-bottom: none;
+    }
+    
+    .profile-avatar {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background: #cbd5e0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+    }
+    
+    .profile-info h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+    }
+    
+    .profile-info p {
+      color: #718096;
+      font-size: 0.875rem;
+    }
+    
+    .skill-badge {
+      display: inline-block;
+      background: #ebf8ff;
+      color: #2c5282;
+      padding: 0.25rem 0.75rem;
+      border-radius: 12px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      margin-top: 0.5rem;
+    }
+    
+    .status-badge {
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    
+    .status-pending {
+      background: #fef3c7;
+      color: #92400e;
+    }
+    
+    .status-verified {
+      background: #d1fae5;
+      color: #065f46;
+    }
+    
+    .status-rejected {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+    
+    .profile-actions {
+      display: flex;
+      gap: 0.5rem;
+    }
+    
+    .btn {
+      padding: 0.5rem 1rem;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .btn-primary {
+      background: #3d5a9b;
+      color: white;
+    }
+    
+    .btn-primary:hover {
+      background: #2c4373;
+    }
+    
+    .btn-danger {
+      background: #dc2626;
+      color: white;
+    }
+    
+    .btn-danger:hover {
+      background: #b91c1c;
+    }
+    
+    .btn-secondary {
+      background: #e2e8f0;
+      color: #4a5568;
+    }
+    
+    .btn-secondary:hover {
+      background: #cbd5e0;
+    }
+    
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.5);
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    
+    .modal.active {
+      display: flex;
+    }
+    
+    .modal-content {
+      background: white;
+      border-radius: 12px;
+      padding: 2rem;
+      max-width: 600px;
+      width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+    
+    .modal-header {
+      margin-bottom: 1.5rem;
+    }
+    
+    .modal-header h2 {
+      font-size: 1.5rem;
+      margin-bottom: 0.5rem;
+    }
+    
+    .document-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin: 1.5rem 0;
+    }
+    
+    .document-card {
+      border: 2px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 1rem;
+      text-align: center;
+    }
+    
+    .document-card img {
+      width: 100%;
+      height: 150px;
+      object-fit: cover;
+      border-radius: 4px;
+      margin-bottom: 0.5rem;
+    }
+    
+    .document-label {
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: #4a5568;
+    }
+    
+    .form-group {
+      margin-bottom: 1.5rem;
+    }
+    
+    .form-group label {
+      display: block;
+      font-weight: 500;
+      margin-bottom: 0.5rem;
+      font-size: 0.875rem;
+    }
+    
+    .form-group textarea {
+      width: 100%;
+      padding: 0.75rem;
+      border: 2px solid #e2e8f0;
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 0.875rem;
+      resize: vertical;
+    }
+    
+    .modal-actions {
+      display: flex;
+      gap: 1rem;
+      justify-content: flex-end;
+      margin-top: 2rem;
+    }
+    
+    .loading {
+      text-align: center;
+      padding: 3rem;
+      color: #718096;
+    }
+    
+    .empty-state {
+      text-align: center;
+      padding: 3rem;
+      color: #718096;
+    }
+    
+    .empty-state h3 {
+      font-size: 1.25rem;
+      margin-bottom: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🔒 TrustConnect Admin</h1>
+    <p>Artisan Verification Management</p>
+  </div>
+  
+  <div class="container">
+    <!-- Stats -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-value" id="stat-pending">0</div>
+        <div class="stat-label">Pending Review</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="stat-verified">0</div>
+        <div class="stat-label">Verified</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="stat-rejected">0</div>
+        <div class="stat-label">Rejected</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="stat-total">0</div>
+        <div class="stat-label">Total Artisans</div>
+      </div>
+    </div>
+    
+    <!-- Filters -->
+    <div class="filters">
+      <button class="filter-btn active" onclick="filterProfiles('all')">All</button>
+      <button class="filter-btn" onclick="filterProfiles('pending')">Pending</button>
+      <button class="filter-btn" onclick="filterProfiles('verified')">Verified</button>
+      <button class="filter-btn" onclick="filterProfiles('rejected')">Rejected</button>
+    </div>
+    
+    <!-- Profiles List -->
+    <div class="profiles-list">
+      <div id="profiles-container" class="loading">
+        Loading profiles...
+      </div>
+    </div>
+  </div>
+  
+  <!-- Review Modal -->
+  <div id="review-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="modal-artisan-name">Artisan Name</h2>
+        <p id="modal-artisan-info"></p>
+      </div>
+      
+      <div class="document-grid">
+        <div class="document-card">
+          <img id="modal-profile-photo" src="" alt="Profile Photo">
+          <div class="document-label">Profile Photo</div>
+        </div>
+        <div class="document-card">
+          <img id="modal-gov-id" src="" alt="Government ID">
+          <div class="document-label" id="modal-id-type">Government ID</div>
+        </div>
+      </div>
+      
+      <div class="form-group">
+        <label>Admin Notes (optional)</label>
+        <textarea id="admin-notes" rows="4" placeholder="Add notes about this verification..."></textarea>
+      </div>
+      
+      <div class="modal-actions">
+        <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-danger" onclick="handleReject()">Reject</button>
+        <button class="btn btn-primary" onclick="handleApprove()">Approve</button>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    const API_BASE = 'http://localhost:3000/api';
+    let currentProfile = null;
+    let allProfiles = [];
+    let currentFilter = 'all';
+    
+    // Load profiles on page load
+    document.addEventListener('DOMContentLoaded', () => {
+      loadProfiles();
+    });
+    
+    async function loadProfiles() {
+      try {
+        const response = await fetch(`${API_BASE}/artisan/admin/profiles`);
+        const data = await response.json();
+        allProfiles = data.profiles || [];
+        
+        updateStats();
+        renderProfiles();
+      } catch (error) {
+        console.error('Failed to load profiles:', error);
+        document.getElementById('profiles-container').innerHTML = `
+          <div class="empty-state">
+            <h3>Failed to load profiles</h3>
+            <p>Please check your connection and try again</p>
+          </div>
+        `;
+      }
+    }
+    
+    function updateStats() {
+      const pending = allProfiles.filter(p => p.verificationStatus === 'pending').length;
+      const verified = allProfiles.filter(p => p.verificationStatus === 'verified').length;
+      const rejected = allProfiles.filter(p => p.verificationStatus === 'rejected').length;
+      
+      document.getElementById('stat-pending').textContent = pending;
+      document.getElementById('stat-verified').textContent = verified;
+      document.getElementById('stat-rejected').textContent = rejected;
+      document.getElementById('stat-total').textContent = allProfiles.length;
+    }
+    
+    function filterProfiles(status) {
+      currentFilter = status;
+      
+      // Update button states
+      document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.classList.remove('active');
+      });
+      event.target.classList.add('active');
+      
+      renderProfiles();
+    }
+    
+    function renderProfiles() {
+      const container = document.getElementById('profiles-container');
+      let filtered = allProfiles;
+      
+      if (currentFilter !== 'all') {
+        filtered = allProfiles.filter(p => p.verificationStatus === currentFilter);
+      }
+      
+      if (filtered.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <h3>No profiles found</h3>
+            <p>No artisans match the selected filter</p>
+          </div>
+        `;
+        return;
+      }
+      
+      container.innerHTML = filtered.map(profile => `
+        <div class="profile-item">
+          <div class="profile-avatar">${profile.artisanName?.[0] || '?'}</div>
+          <div class="profile-info">
+            <h3>${profile.artisanName || 'Unknown'}</h3>
+            <p>${profile.artisanPhone || 'No phone'}</p>
+            <span class="skill-badge">${profile.primarySkill || profile.skillCategory || 'No skill'}</span>
+          </div>
+          <div>
+            <span class="status-badge status-${profile.verificationStatus}">
+              ${profile.verificationStatus}
+            </span>
+          </div>
+          <div class="profile-actions">
+            <button class="btn btn-primary" onclick="openReviewModal(${profile.id})">
+              Review
+            </button>
+          </div>
+        </div>
+      `).join('');
+    }
+    
+    async function openReviewModal(profileId) {
+      try {
+        const response = await fetch(`${API_BASE}/artisan/admin/profiles/${profileId}`);
+        currentProfile = await response.json();
+        
+        document.getElementById('modal-artisan-name').textContent = currentProfile.artisanName || 'Unknown';
+        document.getElementById('modal-artisan-info').textContent = 
+          `${currentProfile.primarySkill || currentProfile.skillCategory} • ${currentProfile.artisanPhone}`;
+        
+        document.getElementById('modal-profile-photo').src = 
+          `${API_BASE.replace('/api', '')}${currentProfile.profile_photo_url}`;
+        document.getElementById('modal-gov-id').src = 
+          `${API_BASE.replace('/api', '')}${currentProfile.government_id_url}`;
+        document.getElementById('modal-id-type').textContent = 
+          `${currentProfile.id_type || 'ID'} Document`;
+        
+        document.getElementById('admin-notes').value = currentProfile.admin_notes || '';
+        
+        document.getElementById('review-modal').classList.add('active');
+      } catch (error) {
+        console.error('Failed to load profile:', error);
+        alert('Failed to load profile details');
+      }
+    }
+    
+    function closeModal() {
+      document.getElementById('review-modal').classList.remove('active');
+      currentProfile = null;
+    }
+    
+    async function handleApprove() {
+      if (!currentProfile) return;
+      
+      const notes = document.getElementById('admin-notes').value;
+      
+      try {
+        await fetch(`${API_BASE}/artisan/admin/profiles/${currentProfile.id}/status`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            status: 'verified',
+            adminNotes: notes
+          })
+        });
+        
+        alert('Artisan verified successfully!');
+        closeModal();
+        loadProfiles();
+      } catch (error) {
+        console.error('Failed to approve:', error);
+        alert('Failed to approve artisan');
+      }
+    }
+    
+    async function handleReject() {
+      if (!currentProfile) return;
+      
+      const notes = document.getElementById('admin-notes').value;
+      if (!notes.trim()) {
+        alert('Please provide a reason for rejection');
+        return;
+      }
+      
+      try {
+        await fetch(`${API_BASE}/artisan/admin/profiles/${currentProfile.id}/status`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            status: 'rejected',
+            adminNotes: notes
+          })
+        });
+        
+        alert('Artisan rejected');
+        closeModal();
+        loadProfiles();
+      } catch (error) {
+        console.error('Failed to reject:', error);
+        alert('Failed to reject artisan');
+      }
+    }
+  </script>
+</body>
+</html>

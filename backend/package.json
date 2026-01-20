@@ -9,16 +9,23 @@
     "start": "node dist/server.js",
     "db:setup": "ts-node src/database/setup.ts"
   },
-  "keywords": ["trustconnect", "authentication", "otp", "mvp"],
+  "keywords": [
+    "trustconnect",
+    "authentication",
+    "otp",
+    "mvp"
+  ],
   "author": "TrustConnect Team",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@types/multer": "^2.0.0",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
+    "multer": "^2.0.2",
     "pg": "^8.17.1"
   },
   "devDependencies": {
