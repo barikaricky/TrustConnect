@@ -9,14 +9,9 @@ export const pool = new Pool({
   password: config.database.password,
 });
 
-// Test database connection
-pool.on('connect', () => {
-  console.log('✅ Database connected');
-});
-
+// Handle pool errors
 pool.on('error', (err) => {
-  console.error('❌ Database connection error:', err);
-  process.exit(-1);
+  console.error('❌ Unexpected database error:', err);
 });
 
 export default pool;

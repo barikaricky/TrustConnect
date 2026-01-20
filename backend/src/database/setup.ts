@@ -6,10 +6,13 @@ import pool from './connection';
  */
 
 async function setupDatabase() {
-  const client = await pool.connect();
+  let client;
   
   try {
     console.log('🚀 Setting up TrustConnect database...');
+    
+    client = await pool.connect();
+    console.log('✅ Database connected');
     
     // Create users table
     await client.query(`
@@ -52,7 +55,9 @@ async function setupDatabase() {
     console.error('❌ Database setup failed:', error);
     throw error;
   } finally {
-    client.release();
+    if (client) {
+      client.release();
+    }
     await pool.end();
   }
 }
