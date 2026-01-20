@@ -1,4 +1,4 @@
-import { db, ArtisanProfile, VerificationHistory } from '../database/connection';
+import { db, ArtisanProfile, VerificationHistory, Database } from '../database/connection';
 
 export interface OnboardingData {
   userId: number;
@@ -18,17 +18,19 @@ export interface VerificationDecision {
 
 export class ArtisanService {
   static async getProfileByUserId(userId: number): Promise<ArtisanProfile | null> {
-    await db.read();
-    return db.data!.artisanProfiles.find(p => p.userId === userId) || null;
+    db.read();
+    const data = db.data as Database;
+    return data.artisanProfiles.find((p: ArtisanProfile) => p.userId === userId) || null;
   }
-  
+
   static async initializeProfile(userId: number): Promise<ArtisanProfile> {
-    await db.read();
-    let profile = db.data!.artisanProfiles.find(p => p.userId === userId);
-    
+    db.read();
+    const data = db.data as Database;
+    let profile = data.artisanProfiles.find((p: ArtisanProfile) => p.userId === userId);
+
     if (!profile) {
       profile = {
-        id: db.data!._meta.nextArtisanProfileId++,
+        id: data._meta.nextArtisanProfileId++,
         userId,
         skillCategory: '',
         primarySkill: '',
@@ -36,34 +38,35 @@ export class ArtisanService {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      
-      db.data!.artisanProfiles.push(profile);
-      await db.write();
+
+      data.artisanProfiles.push(profile);
+      db.write();
     }
-    
+
     return profile;
   }
-  
-  static async submitOnboarding(data: OnboardingData): Promise<ArtisanProfile> {
-    await db.read();
-    let profile = db.data!.artisanProfiles.find(p => p.userId === data.userId);
-    
+
+  static async submitOnboarding(onboardingData: OnboardingData): Promise<ArtisanProfile> {
+    db.read();
+    const data = db.data as Database;
+    let profile = data.artisanProfiles.find((p: ArtisanProfile) => p.userId === onboardingData.userId);
+
     if (!profile) {
-      profile = await this.initializeProfile(data.userId);
-      await db.read();
+      profile = await this.initializeProfile(onboardingData.userId);
+      db.read();
     }
-    
-    profile.skillCategory = data.skillCategory;
-    profile.primarySkill = data.primarySkill;
-    profile.profilePhotoUrl = data.profilePhotoUrl;
-    profile.governmentIdUrl = data.governmentIdUrl;
-    profile.idType = data.idType;
+
+    profile.skillCategory = onboardingData.skillCategory;
+    profile.primarySkill = onboardingData.primarySkill;
+    profile.profilePhotoUrl = onboardingData.profilePhotoUrl;
+    profile.governmentIdUrl = onboardingData.governmentIdUrl;
+    profile.idType = onboardingData.idType;
     profile.verificationStatus = 'pending';
     profile.submittedAt = new Date().toISOString();
     profile.updatedAt = new Date().toISOString();
-    
+
     const history: VerificationHistory = {
-      id: db.data!._meta.nextHistoryId++,
+      id: data._meta.nextHistoryId++,
       artisanProfileId: profile.id,
       previousStatus: 'unsubmitted',
       newStatus: 'pending',
@@ -71,23 +74,24 @@ export class ArtisanService {
       reason: 'Initial submission',
       createdAt: new Date().toISOString(),
     };
-    
-    db.data!.verificationHistory.push(history);
-    await db.write();
-    
+
+    data.verificationHistory.push(history);
+    db.write();
+
     return profile;
   }
-  
+
   static async getAllProfiles(status?: string): Promise<any[]> {
-    await db.read();
-    let profiles = db.data!.artisanProfiles;
-    
+    db.read();
+    const data = db.data as Database;
+    let profiles = data.artisanProfiles;
+
     if (status) {
-      profiles = profiles.filter(p => p.verificationStatus === status);
+      profiles = profiles.filter((p: ArtisanProfile) => p.verificationStatus === status);
     }
-    
-    return profiles.map(profile => {
-      const user = db.data!.users.find(u => u.id === profile.userId);
+
+    return profiles.map((profile: ArtisanProfile) => {
+      const user = data.users.find((u: any) => u.id === profile.userId);
       return {
         ...profile,
         artisanName: user?.name,
@@ -95,23 +99,24 @@ export class ArtisanService {
       };
     });
   }
-  
+
   static async updateVerificationStatus(decision: VerificationDecision): Promise<ArtisanProfile> {
-    await db.read();
-    const profile = db.data!.artisanProfiles.find(p => p.id === decision.artisanProfileId);
-    
+    db.read();
+    const data = db.data as Database;
+    const profile = data.artisanProfiles.find((p: ArtisanProfile) => p.id === decision.artisanProfileId);
+
     if (!profile) throw new Error('Profile not found');
-    
+
     const previousStatus = profile.verificationStatus;
     profile.verificationStatus = decision.status;
     profile.adminNotes = decision.adminNotes;
     profile.updatedAt = new Date().toISOString();
-    
+
     if (decision.status === 'verified') profile.verifiedAt = new Date().toISOString();
     if (decision.status === 'rejected') profile.rejectedAt = new Date().toISOString();
-    
+
     const history: VerificationHistory = {
-      id: db.data!._meta.nextHistoryId++,
+      id: data._meta.nextHistoryId++,
       artisanProfileId: profile.id,
       previousStatus,
       newStatus: decision.status,
@@ -119,16 +124,17 @@ export class ArtisanService {
       reason: decision.adminNotes,
       createdAt: new Date().toISOString(),
     };
-    
-    db.data!.verificationHistory.push(history);
-    await db.write();
-    
+
+    data.verificationHistory.push(history);
+    db.write();
+
     return profile;
   }
-  
+
   static async isVerified(userId: number): Promise<boolean> {
-    await db.read();
-    const profile = db.data!.artisanProfiles.find(p => p.userId === userId);
+    db.read();
+    const data = db.data as Database;
+    const profile = data.artisanProfiles.find((p: ArtisanProfile) => p.userId === userId);
     return profile?.verificationStatus === 'verified';
   }
 }
