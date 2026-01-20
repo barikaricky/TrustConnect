@@ -1,7 +1,7 @@
 // LowDB connection for MVP (no PostgreSQL needed)
-// Using JSONFileSync for synchronous file operations
-import { LowSync } from 'lowdb';
-import { JSONFileSync } from 'lowdb/lib/adapters/JSONFileSync.js';
+// Using lowdb 1.x for better CommonJS/TypeScript support
+import low from 'lowdb';
+import FileSync from 'lowdb/adapters/FileSync';
 import path from 'path';
 import fs from 'fs';
 
@@ -70,10 +70,7 @@ if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
 
-// Initialize database
-const file = path.join(dataDir, 'db.json');
-const adapter = new JSONFileSync<Database>(file);
-
+// Default data structure
 const defaultData: Database = {
   users: [],
   otpSessions: [],
@@ -87,12 +84,13 @@ const defaultData: Database = {
   },
 };
 
-const db = new LowSync<Database>(adapter);
+// Initialize database
+const file = path.join(dataDir, 'db.json');
+const adapter = new FileSync<Database>(file);
+const db = low(adapter);
 
-// Initialize synchronously
-db.read();
-db.data = db.data || defaultData;
-db.write();
+// Initialize with default data
+db.defaults(defaultData).write();
 console.log('✅ Database initialized (LowDB)');
 
 export { db, Database, User, OTPSession, ArtisanProfile, VerificationHistory };

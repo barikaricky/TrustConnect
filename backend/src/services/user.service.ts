@@ -1,20 +1,18 @@
-import { db, User, Database } from '../database/connection';
+import db from '../database/connection';
+import { User } from '../database/connection';
 
 export { User };
 
 export class UserService {
   static async findByPhone(phone: string): Promise<User | null> {
-    db.read();
-    const data = db.data as Database;
-    return data.users.find((u: User) => u.phone === phone) || null;
+    return db.get('users').find({ phone }).value() || null;
   }
 
   static async createUser(phone: string, name: string, role: 'customer' | 'artisan'): Promise<User> {
-    db.read();
-    const data = db.data as Database;
-
+    const userId = db.get('_meta.nextUserId').value();
+    
     const user: User = {
-      id: data._meta.nextUserId++,
+      id: userId,
       phone,
       name,
       role,
@@ -23,26 +21,23 @@ export class UserService {
       updatedAt: new Date().toISOString(),
     };
 
-    data.users.push(user);
-    db.write();
+    db.get('users').push(user).write();
+    db.set('_meta.nextUserId', userId + 1).write();
 
     return user;
   }
 
   static async verifyUser(userId: number): Promise<void> {
-    db.read();
-    const data = db.data as Database;
-    const user = data.users.find((u: User) => u.id === userId);
-    if (user) {
-      user.verified = true;
-      user.updatedAt = new Date().toISOString();
-      db.write();
-    }
+    db.get('users')
+      .find({ id: userId })
+      .assign({
+        verified: true,
+        updatedAt: new Date().toISOString(),
+      })
+      .write();
   }
 
   static async findById(userId: number): Promise<User | null> {
-    db.read();
-    const data = db.data as Database;
-    return data.users.find((u: User) => u.id === userId) || null;
+    return db.get('users').find({ id: userId }).value() || null;
   }
 }

@@ -1,46 +1,43 @@
-import { db, OTPSession, Database } from '../database/connection';
+import db from '../database/connection';
+import { OTPSession } from '../database/connection';
 
 export class OTPService {
   static async generateOTP(phone: string): Promise<string> {
     const otp = '123456';
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+    const otpId = db.get('_meta.nextOtpId').value();
 
-    db.read();
-    const data = db.data as Database;
     const session: OTPSession = {
-      id: data._meta.nextOtpId++,
+      id: otpId,
       phone,
       otp,
       expiresAt: expiresAt.toISOString(),
       createdAt: new Date().toISOString(),
     };
 
-    data.otpSessions.push(session);
-    db.write();
+    db.get('otpSessions').push(session).write();
+    db.set('_meta.nextOtpId', otpId + 1).write();
     this.cleanupExpiredOTPs();
 
     return otp;
   }
 
   static async verifyOTP(phone: string, otp: string): Promise<boolean> {
-    db.read();
-    const data = db.data as Database;
-    const session = data.otpSessions.find(
-      (s: OTPSession) => s.phone === phone && s.otp === otp && new Date(s.expiresAt) > new Date()
-    );
+    const session = db.get('otpSessions')
+      .find((s: OTPSession) => s.phone === phone && s.otp === otp && new Date(s.expiresAt) > new Date())
+      .value();
 
     if (session) {
-      data.otpSessions = data.otpSessions.filter((s: OTPSession) => s.id !== session.id);
-      db.write();
+      db.get('otpSessions').remove({ id: session.id }).write();
       return true;
     }
     return false;
   }
 
   static cleanupExpiredOTPs(): void {
-    db.read();
-    const data = db.data as Database;
-    data.otpSessions = data.otpSessions.filter((s: OTPSession) => new Date(s.expiresAt) > new Date());
-    db.write();
+    const now = new Date();
+    db.get('otpSessions')
+      .remove((s: OTPSession) => new Date(s.expiresAt) <= now)
+      .write();
   }
 }
