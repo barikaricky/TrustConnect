@@ -1,5 +1,5 @@
-import db from '../database/connection';
-import { ArtisanProfile, VerificationHistory } from '../database/connection';
+import { collections, getNextSequence, ArtisanProfile, VerificationHistory } from '../database/connection';
+import { ObjectId } from 'mongodb';
 
 export interface OnboardingData {
   userId: number;
@@ -19,93 +19,96 @@ export interface VerificationDecision {
 
 export class ArtisanService {
   static async getProfileByUserId(userId: number): Promise<ArtisanProfile | null> {
-    return db.get('artisanProfiles').find({ userId }).value() || null;
+    return await collections.artisanProfiles().findOne({ userId });
   }
 
   static async initializeProfile(userId: number): Promise<ArtisanProfile> {
-    let profile = db.get('artisanProfiles').find({ userId }).value();
+    let profile = await collections.artisanProfiles().findOne({ userId });
 
     if (!profile) {
-      const profileId = db.get('_meta.nextArtisanProfileId').value();
+      const id = await getNextSequence('artisanProfileId');
       
-      profile = {
-        id: profileId,
+      const newProfile: any = {
+        id,
         userId,
         skillCategory: '',
         primarySkill: '',
-        verificationStatus: 'unsubmitted',
+        verificationStatus: 'unsubmitted' as const,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
 
-      db.get('artisanProfiles').push(profile).write();
-      db.set('_meta.nextArtisanProfileId', profileId + 1).write();
+      await collections.artisanProfiles().insertOne(newProfile);
+      profile = await collections.artisanProfiles().findOne({ id });
     }
 
-    return profile;
+    return profile!;
   }
 
   static async submitOnboarding(onboardingData: OnboardingData): Promise<ArtisanProfile> {
-    let profile = db.get('artisanProfiles').find({ userId: onboardingData.userId }).value();
+    const existingProfile = await collections.artisanProfiles().findOne({ userId: onboardingData.userId });
 
-    if (!profile) {
-      profile = await this.initializeProfile(onboardingData.userId);
-    }
+    const profile = existingProfile || await this.initializeProfile(onboardingData.userId);
 
-    const historyId = db.get('_meta.nextHistoryId').value();
-    const history: VerificationHistory = {
+    if (!profile) throw new Error('Failed to initialize profile');
+
+    const historyId = await getNextSequence('historyId');
+    const history: any = {
       id: historyId,
       artisanProfileId: profile.id,
       previousStatus: profile.verificationStatus,
-      newStatus: 'pending',
+      newStatus: 'pending' as const,
       changedBy: 'system',
       reason: 'Initial submission',
       createdAt: new Date().toISOString(),
     };
 
-    db.get('artisanProfiles')
-      .find({ id: profile.id })
-      .assign({
-        skillCategory: onboardingData.skillCategory,
-        primarySkill: onboardingData.primarySkill,
-        profilePhotoUrl: onboardingData.profilePhotoUrl,
-        governmentIdUrl: onboardingData.governmentIdUrl,
-        idType: onboardingData.idType,
-        verificationStatus: 'pending',
-        submittedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      })
-      .write();
+    await collections.artisanProfiles().updateOne(
+      { id: profile.id },
+      {
+        $set: {
+          skillCategory: onboardingData.skillCategory,
+          primarySkill: onboardingData.primarySkill,
+          profilePhotoUrl: onboardingData.profilePhotoUrl,
+          governmentIdUrl: onboardingData.governmentIdUrl,
+          idType: onboardingData.idType,
+          verificationStatus: 'pending',
+          submittedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      }
+    );
 
-    db.get('verificationHistory').push(history).write();
-    db.set('_meta.nextHistoryId', historyId + 1).write();
+    await collections.verificationHistory().insertOne(history);
 
-    return db.get('artisanProfiles').find({ id: profile.id }).value();
+    return (await collections.artisanProfiles().findOne({ id: profile.id }))!;
   }
 
   static async getAllProfiles(status?: string): Promise<any[]> {
-    let profiles = db.get('artisanProfiles');
+    const query: any = status && ['verified', 'unsubmitted', 'pending', 'rejected', 'suspended'].includes(status) 
+      ? { verificationStatus: status as ArtisanProfile['verificationStatus'] } 
+      : {};
+    
+    const profiles = await collections.artisanProfiles().find(query).toArray();
 
-    if (status) {
-      profiles = profiles.filter({ verificationStatus: status });
-    }
-
-    return profiles.value().map((profile: ArtisanProfile) => {
-      const user = db.get('users').find({ id: profile.userId }).value();
-      return {
-        ...profile,
-        artisanName: user?.name,
-        artisanPhone: user?.phone,
-      };
-    });
+    return Promise.all(
+      profiles.map(async (profile) => {
+        const user = await collections.users().findOne({ id: profile.userId });
+        return {
+          ...profile,
+          artisanName: user?.name,
+          artisanPhone: user?.phone,
+        };
+      })
+    );
   }
 
   static async updateVerificationStatus(decision: VerificationDecision): Promise<ArtisanProfile> {
-    const profile = db.get('artisanProfiles').find({ id: decision.artisanProfileId }).value();
+    const profile = await collections.artisanProfiles().findOne({ id: decision.artisanProfileId });
 
     if (!profile) throw new Error('Profile not found');
 
-    const historyId = db.get('_meta.nextHistoryId').value();
+    const historyId = await getNextSequence('historyId');
     const updateData: any = {
       verificationStatus: decision.status,
       adminNotes: decision.adminNotes,
@@ -115,12 +118,12 @@ export class ArtisanService {
     if (decision.status === 'verified') updateData.verifiedAt = new Date().toISOString();
     if (decision.status === 'rejected') updateData.rejectedAt = new Date().toISOString();
 
-    db.get('artisanProfiles')
-      .find({ id: decision.artisanProfileId })
-      .assign(updateData)
-      .write();
+    await collections.artisanProfiles().updateOne(
+      { id: decision.artisanProfileId },
+      { $set: updateData }
+    );
 
-    const history: VerificationHistory = {
+    const history: any = {
       id: historyId,
       artisanProfileId: decision.artisanProfileId,
       previousStatus: profile.verificationStatus,
@@ -130,14 +133,75 @@ export class ArtisanService {
       createdAt: new Date().toISOString(),
     };
 
-    db.get('verificationHistory').push(history).write();
-    db.set('_meta.nextHistoryId', historyId + 1).write();
+    await collections.verificationHistory().insertOne(history);
 
-    return db.get('artisanProfiles').find({ id: decision.artisanProfileId }).value();
+    return (await collections.artisanProfiles().findOne({ id: decision.artisanProfileId }))!;
   }
 
   static async isVerified(userId: number): Promise<boolean> {
-    const profile = db.get('artisanProfiles').find({ userId }).value();
+    const profile = await collections.artisanProfiles().findOne({ userId });
     return profile?.verificationStatus === 'verified';
+  }
+
+  /**
+   * Complete multi-phase registration
+   */
+  static async completeMultiPhaseRegistration(data: any): Promise<ArtisanProfile> {
+    const existingProfile = await collections.artisanProfiles().findOne({ userId: data.userId });
+
+    const profile = existingProfile || await this.initializeProfile(data.userId);
+
+    if (!profile) throw new Error('Failed to initialize profile');
+
+    const historyId = await getNextSequence('historyId');
+    const history: any = {
+      id: historyId,
+      artisanProfileId: profile.id,
+      previousStatus: profile.verificationStatus,
+      newStatus: 'pending' as const,
+      changedBy: 'system',
+      reason: 'Multi-phase registration completed',
+      createdAt: new Date().toISOString(),
+    };
+
+    // Update profile with all phase data
+    await collections.artisanProfiles().updateOne(
+      { id: profile.id },
+      {
+        $set: {
+          // Identity
+          idType: data.idType,
+          idNumber: data.idNumber,
+          profilePhotoUrl: data.selfieUrl,
+          governmentIdUrl: data.idDocumentUrl,
+
+          // Professional Profile
+          fullName: data.fullName,
+          skillCategory: data.primaryTrade,
+          primarySkill: data.primaryTrade,
+          yearsExperience: data.yearsExperience,
+          workshopAddress: data.workshopAddress,
+
+          // Skill Proof
+          portfolioPhotos: data.portfolioPhotos,
+
+          // Financial Setup
+          accountNumber: data.accountNumber,
+          bankName: data.bankName,
+          accountName: data.accountName,
+
+          // Trust Agreement
+          trustAccepted: data.trustAccepted,
+
+          verificationStatus: 'pending',
+          submittedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      }
+    );
+
+    await collections.verificationHistory().insertOne(history);
+
+    return (await collections.artisanProfiles().findOne({ id: profile.id }))!;
   }
 }

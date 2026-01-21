@@ -1,12 +1,16 @@
-// LowDB connection for MVP (no PostgreSQL needed)
-// Using lowdb 1.x for better CommonJS/TypeScript support
-import low from 'lowdb';
-import FileSync from 'lowdb/adapters/FileSync';
-import path from 'path';
-import fs from 'fs';
+// MongoDB connection for production-ready backend
+import { MongoClient, Db, Collection, ObjectId } from 'mongodb';
 
-// Database structure
-interface User {
+// MongoDB connection URL - use environment variable or default to local
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017';
+const DB_NAME = process.env.DB_NAME || 'trustconnect';
+
+let db: Db;
+let client: MongoClient;
+
+// Database structure interfaces
+export interface User {
+  _id?: ObjectId;
   id: number;
   phone: string;
   name: string;
@@ -16,7 +20,8 @@ interface User {
   updatedAt: string;
 }
 
-interface OTPSession {
+export interface OTPSession {
+  _id?: ObjectId;
   id: number;
   phone: string;
   otp: string;
@@ -24,7 +29,8 @@ interface OTPSession {
   createdAt: string;
 }
 
-interface ArtisanProfile {
+export interface ArtisanProfile {
+  _id?: ObjectId;
   id: number;
   userId: number;
   skillCategory: string;
@@ -32,6 +38,15 @@ interface ArtisanProfile {
   profilePhotoUrl?: string;
   governmentIdUrl?: string;
   idType?: 'NIN' | 'BVN';
+  idNumber?: string;
+  fullName?: string;
+  yearsExperience?: number;
+  workshopAddress?: string;
+  portfolioPhotos?: string[];
+  accountNumber?: string;
+  bankName?: string;
+  accountName?: string;
+  trustAccepted?: boolean;
   verificationStatus: 'unsubmitted' | 'pending' | 'verified' | 'rejected' | 'suspended';
   adminNotes?: string;
   submittedAt?: string;
@@ -41,7 +56,8 @@ interface ArtisanProfile {
   updatedAt: string;
 }
 
-interface VerificationHistory {
+export interface VerificationHistory {
+  _id?: ObjectId;
   id: number;
   artisanProfileId: number;
   previousStatus: string;
@@ -51,47 +67,73 @@ interface VerificationHistory {
   createdAt: string;
 }
 
-interface Database {
-  users: User[];
-  otpSessions: OTPSession[];
-  artisanProfiles: ArtisanProfile[];
-  verificationHistory: VerificationHistory[];
-  _meta: {
-    nextUserId: number;
-    nextOtpId: number;
-    nextArtisanProfileId: number;
-    nextHistoryId: number;
-  };
+export interface CounterDocument {
+  _id: string;
+  seq: number;
 }
 
-// Create data directory
-const dataDir = path.join(__dirname, '../../data');
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
+// Connect to MongoDB
+export async function connectDB(): Promise<Db> {
+  try {
+    client = new MongoClient(MONGODB_URI);
+    await client.connect();
+    db = client.db(DB_NAME);
+    
+    // Create indexes for better performance
+    await db.collection('users').createIndex({ phone: 1 }, { unique: true });
+    await db.collection('users').createIndex({ id: 1 }, { unique: true });
+    await db.collection('artisanProfiles').createIndex({ userId: 1 }, { unique: true });
+    await db.collection('otpSessions').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+    
+    // Initialize counters if they don't exist
+    const counters = db.collection<CounterDocument>('counters');
+    const counterIds = ['userId', 'otpId', 'artisanProfileId', 'historyId'];
+    
+    for (const counterId of counterIds) {
+      const exists = await counters.findOne({ _id: counterId });
+      if (!exists) {
+        await counters.insertOne({ _id: counterId, seq: 1 });
+      }
+    }
+    
+    console.log('✅ Connected to MongoDB');
+    return db;
+  } catch (error) {
+    console.error('❌ MongoDB connection error:', error);
+    throw error;
+  }
 }
 
-// Default data structure
-const defaultData: Database = {
-  users: [],
-  otpSessions: [],
-  artisanProfiles: [],
-  verificationHistory: [],
-  _meta: {
-    nextUserId: 1,
-    nextOtpId: 1,
-    nextArtisanProfileId: 1,
-    nextHistoryId: 1,
-  },
+// Get next sequence number for auto-increment IDs
+export async function getNextSequence(name: string): Promise<number> {
+  const result = await db.collection<CounterDocument>('counters').findOneAndUpdate(
+    { _id: name },
+    { $inc: { seq: 1 } },
+    { returnDocument: 'after', upsert: true }
+  );
+  return result!.seq;
+}
+
+// Get database instance
+export function getDB(): Db {
+  if (!db) {
+    throw new Error('Database not initialized. Call connectDB() first.');
+  }
+  return db;
+}
+
+// Collections helper
+export const collections = {
+  users: () => getDB().collection<User>('users'),
+  otpSessions: () => getDB().collection<OTPSession>('otpSessions'),
+  artisanProfiles: () => getDB().collection<ArtisanProfile>('artisanProfiles'),
+  verificationHistory: () => getDB().collection<VerificationHistory>('verificationHistory'),
 };
 
-// Initialize database
-const file = path.join(dataDir, 'db.json');
-const adapter = new FileSync<Database>(file);
-const db = low(adapter);
-
-// Initialize with default data
-db.defaults(defaultData).write();
-console.log('✅ Database initialized (LowDB)');
-
-export { db, Database, User, OTPSession, ArtisanProfile, VerificationHistory };
-export default db;
+// Close connection
+export async function closeDB(): Promise<void> {
+  if (client) {
+    await client.close();
+    console.log('MongoDB connection closed');
+  }
+}

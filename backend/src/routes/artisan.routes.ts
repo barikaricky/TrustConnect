@@ -45,6 +45,7 @@ const upload = multer({
 // Artisan routes (requires authentication)
 router.get('/profile', authMiddleware, ArtisanController.getMyProfile);
 router.post('/onboarding', authMiddleware, ArtisanController.submitOnboarding);
+router.post('/registration/complete', authMiddleware, ArtisanController.completeRegistration);
 router.post('/upload', authMiddleware, upload.single('file'), ArtisanController.uploadFile);
 
 // Admin routes (TODO: add admin middleware)

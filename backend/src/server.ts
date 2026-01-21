@@ -2,7 +2,7 @@ import express, { Application } from 'express';
 import cors from 'cors';
 import { config } from './config';
 import routes from './routes';
-import './database/connection'; // Initialize database connection
+import { connectDB } from './database/connection';
 
 const app: Application = express();
 
@@ -53,14 +53,22 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
 
 // Start server
 const PORT = config.port;
-app.listen(PORT, () => {
-  console.log(`
+
+async function startServer() {
+  try {
+    // Connect to MongoDB first
+    await connectDB();
+    
+    // Then start the server
+    app.listen(PORT, () => {
+      console.log(`
 ╔═══════════════════════════════════════════╗
 ║  🚀 TrustConnect Backend API             ║
 ║                                           ║
 ║  Status: Running                          ║
 ║  Port: ${PORT}                              ║
 ║  Environment: ${config.nodeEnv}           ║
+║  Database: MongoDB                        ║
 ║                                           ║
 ║  API Endpoints:                           ║
 ║  └─ POST /api/auth/register               ║
@@ -70,7 +78,14 @@ app.listen(PORT, () => {
 ║                                           ║
 ║  ⚠️  OTP is MOCKED: ${config.otp.mockValue}              ║
 ╚═══════════════════════════════════════════╝
-  `);
-});
+      `);
+    });
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  }
+}
+
+startServer();
 
 export default app;

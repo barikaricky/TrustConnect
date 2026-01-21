@@ -1,43 +1,42 @@
-import db from '../database/connection';
-import { OTPSession } from '../database/connection';
+import { collections, getNextSequence, OTPSession } from '../database/connection';
 
 export class OTPService {
   static async generateOTP(phone: string): Promise<string> {
     const otp = '123456';
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
-    const otpId = db.get('_meta.nextOtpId').value();
+    const id = await getNextSequence('otpId');
 
     const session: OTPSession = {
-      id: otpId,
+      id,
       phone,
       otp,
       expiresAt: expiresAt.toISOString(),
       createdAt: new Date().toISOString(),
     };
 
-    db.get('otpSessions').push(session).write();
-    db.set('_meta.nextOtpId', otpId + 1).write();
-    this.cleanupExpiredOTPs();
+    await collections.otpSessions().insertOne(session);
+    await this.cleanupExpiredOTPs();
 
     return otp;
   }
 
   static async verifyOTP(phone: string, otp: string): Promise<boolean> {
-    const session = db.get('otpSessions')
-      .find((s: OTPSession) => s.phone === phone && s.otp === otp && new Date(s.expiresAt) > new Date())
-      .value();
+    const session = await collections.otpSessions().findOne({
+      phone,
+      otp,
+      expiresAt: { $gt: new Date().toISOString() },
+    });
 
     if (session) {
-      db.get('otpSessions').remove({ id: session.id }).write();
+      await collections.otpSessions().deleteOne({ id: session.id });
       return true;
     }
     return false;
   }
 
-  static cleanupExpiredOTPs(): void {
-    const now = new Date();
-    db.get('otpSessions')
-      .remove((s: OTPSession) => new Date(s.expiresAt) <= now)
-      .write();
+  static async cleanupExpiredOTPs(): Promise<void> {
+    await collections.otpSessions().deleteMany({
+      expiresAt: { $lte: new Date().toISOString() },
+    });
   }
 }

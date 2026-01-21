@@ -408,6 +408,7 @@
     let currentProfile = null;
     let allProfiles = [];
     let currentFilter = 'all';
+    let authToken = localStorage.getItem('admin_token') || 'temp-admin-token'; // MVP: Hardcoded token
     
     // Load profiles on page load
     document.addEventListener('DOMContentLoaded', () => {
@@ -416,7 +417,11 @@
     
     async function loadProfiles() {
       try {
-        const response = await fetch(`${API_BASE}/artisan/admin/profiles`);
+        const response = await fetch(`${API_BASE}/artisan/admin/profiles`, {
+          headers: {
+            'Authorization': `Bearer ${authToken}`
+          }
+        });
         const data = await response.json();
         allProfiles = data.profiles || [];
         
@@ -428,6 +433,7 @@
           <div class="empty-state">
             <h3>Failed to load profiles</h3>
             <p>Please check your connection and try again</p>
+            <button class="btn btn-primary" onclick="loadProfiles()">Retry</button>
           </div>
         `;
       }
@@ -498,7 +504,11 @@
     
     async function openReviewModal(profileId) {
       try {
-        const response = await fetch(`${API_BASE}/artisan/admin/profiles/${profileId}`);
+        const response = await fetch(`${API_BASE}/artisan/admin/profiles/${profileId}`, {
+          headers: {
+            'Authorization': `Bearer ${authToken}`
+          }
+        });
         currentProfile = await response.json();
         
         document.getElementById('modal-artisan-name').textContent = currentProfile.artisanName || 'Unknown';
@@ -506,13 +516,13 @@
           `${currentProfile.primarySkill || currentProfile.skillCategory} • ${currentProfile.artisanPhone}`;
         
         document.getElementById('modal-profile-photo').src = 
-          `${API_BASE.replace('/api', '')}${currentProfile.profile_photo_url}`;
+          currentProfile.profilePhotoUrl || 'https://via.placeholder.com/150?text=No+Photo';
         document.getElementById('modal-gov-id').src = 
-          `${API_BASE.replace('/api', '')}${currentProfile.government_id_url}`;
+          currentProfile.governmentIdUrl || 'https://via.placeholder.com/150?text=No+ID';
         document.getElementById('modal-id-type').textContent = 
-          `${currentProfile.id_type || 'ID'} Document`;
+          `${currentProfile.idType || 'ID'} Document`;
         
-        document.getElementById('admin-notes').value = currentProfile.admin_notes || '';
+        document.getElementById('admin-notes').value = currentProfile.adminNotes || '';
         
         document.getElementById('review-modal').classList.add('active');
       } catch (error) {
@@ -534,7 +544,10 @@
       try {
         await fetch(`${API_BASE}/artisan/admin/profiles/${currentProfile.id}/status`, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
           body: JSON.stringify({
             status: 'verified',
             adminNotes: notes
@@ -562,7 +575,10 @@
       try {
         await fetch(`${API_BASE}/artisan/admin/profiles/${currentProfile.id}/status`, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
           body: JSON.stringify({
             status: 'rejected',
             adminNotes: notes

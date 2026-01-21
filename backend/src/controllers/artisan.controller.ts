@@ -81,23 +81,26 @@ export class ArtisanController {
   static async getProfileById(req: Request, res: Response) {
     try {
       const { id } = req.params;
+      const profileId = parseInt(Array.isArray(id) ? id[0] : id);
       
-      const result = await (await import('../database/connection')).default.query(
-        `SELECT 
-          ap.*, 
-          u.name as "artisanName", 
-          u.phone as "artisanPhone"
-         FROM artisan_profiles ap
-         JOIN users u ON ap.user_id = u.id
-         WHERE ap.id = $1`,
-        [id]
-      );
+      const { collections } = await import('../database/connection');
       
-      if (result.rows.length === 0) {
+      const profile = await collections.artisanProfiles().findOne({ id: profileId });
+      
+      if (!profile) {
         return res.status(404).json({ error: 'Profile not found' });
       }
       
-      res.json(result.rows[0]);
+      // Get user details
+      const user = await collections.users().findOne({ id: profile.userId });
+      
+      const result = {
+        ...profile,
+        artisanName: user?.name || 'Unknown',
+        artisanPhone: user?.phone || 'Unknown'
+      };
+      
+      res.json(result);
     } catch (error) {
       console.error('Get profile by ID error:', error);
       res.status(500).json({ error: 'Failed to fetch profile' });
@@ -118,7 +121,7 @@ export class ArtisanController {
       }
       
       const profile = await ArtisanService.updateVerificationStatus({
-        artisanProfileId: parseInt(id),
+        artisanProfileId: parseInt(Array.isArray(id) ? id[0] : id),
         status,
         adminNotes,
         changedBy: adminUser.phone || 'admin'
@@ -153,6 +156,49 @@ export class ArtisanController {
     } catch (error) {
       console.error('Upload error:', error);
       res.status(500).json({ error: 'Failed to upload file' });
+    }
+  }
+
+  /**
+   * Complete multi-phase registration
+   */
+  static async completeRegistration(req: Request, res: Response) {
+    try {
+      const userId = (req as any).user.userId;
+      const profileData = req.body;
+      
+      // Validation
+      if (
+        !profileData.idType ||
+        !profileData.idNumber ||
+        !profileData.selfieUrl ||
+        !profileData.idDocumentUrl ||
+        !profileData.fullName ||
+        !profileData.primaryTrade ||
+        !profileData.yearsExperience ||
+        !profileData.workshopAddress ||
+        !Array.isArray(profileData.portfolioPhotos) ||
+        profileData.portfolioPhotos.length < 3 ||
+        !profileData.accountNumber ||
+        !profileData.bankName ||
+        !profileData.accountName ||
+        profileData.trustAccepted !== true
+      ) {
+        return res.status(400).json({ error: 'Required fields missing' });
+      }
+      
+      const profile = await ArtisanService.completeMultiPhaseRegistration({
+        userId,
+        ...profileData
+      });
+      
+      res.json({
+        message: 'Registration completed successfully',
+        profile
+      });
+    } catch (error) {
+      console.error('Complete registration error:', error);
+      res.status(500).json({ error: 'Failed to complete registration' });
     }
   }
 }

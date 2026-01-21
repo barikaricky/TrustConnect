@@ -16,7 +16,7 @@ export const config = {
   
   jwt: {
     secret: process.env.JWT_SECRET || 'default-secret-change-in-production',
-    expiry: process.env.JWT_EXPIRY || '7d',
+    expiry: parseInt(process.env.JWT_EXPIRY || '604800'), // Default: 7 days in seconds
   },
   
   otp: {

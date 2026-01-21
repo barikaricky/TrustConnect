@@ -1,18 +1,17 @@
-import db from '../database/connection';
-import { User } from '../database/connection';
+import { collections, getNextSequence, User } from '../database/connection';
 
 export { User };
 
 export class UserService {
   static async findByPhone(phone: string): Promise<User | null> {
-    return db.get('users').find({ phone }).value() || null;
+    return await collections.users().findOne({ phone });
   }
 
   static async createUser(phone: string, name: string, role: 'customer' | 'artisan'): Promise<User> {
-    const userId = db.get('_meta.nextUserId').value();
+    const id = await getNextSequence('userId');
     
     const user: User = {
-      id: userId,
+      id,
       phone,
       name,
       role,
@@ -21,23 +20,23 @@ export class UserService {
       updatedAt: new Date().toISOString(),
     };
 
-    db.get('users').push(user).write();
-    db.set('_meta.nextUserId', userId + 1).write();
-
+    await collections.users().insertOne(user);
     return user;
   }
 
   static async verifyUser(userId: number): Promise<void> {
-    db.get('users')
-      .find({ id: userId })
-      .assign({
-        verified: true,
-        updatedAt: new Date().toISOString(),
-      })
-      .write();
+    await collections.users().updateOne(
+      { id: userId },
+      {
+        $set: {
+          verified: true,
+          updatedAt: new Date().toISOString(),
+        },
+      }
+    );
   }
 
   static async findById(userId: number): Promise<User | null> {
-    return db.get('users').find({ id: userId }).value() || null;
+    return await collections.users().findOne({ id: userId });
   }
 }
