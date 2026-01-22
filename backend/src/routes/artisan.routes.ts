@@ -48,6 +48,10 @@ router.post('/onboarding', authMiddleware, ArtisanController.submitOnboarding);
 router.post('/registration/complete', authMiddleware, ArtisanController.completeRegistration);
 router.post('/upload', authMiddleware, upload.single('file'), ArtisanController.uploadFile);
 
+// Public artisan routes (for customers)
+router.get('/top-rated', ArtisanController.getTopRated);
+router.get('/search', ArtisanController.searchArtisans);
+
 // Admin routes (TODO: add admin middleware)
 router.get('/admin/profiles', authMiddleware, ArtisanController.getAllProfiles);
 router.get('/admin/profiles/:id', authMiddleware, ArtisanController.getProfileById);

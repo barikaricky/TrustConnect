@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import bcrypt from 'bcrypt';
 import { UserService } from '../services/user.service';
 import { OTPService } from '../services/otp.service';
 import { JWTService } from '../services/jwt.service';
@@ -11,11 +12,11 @@ import { JWTService } from '../services/jwt.service';
 export class AuthController {
   /**
    * POST /api/auth/register
-   * Initiate registration - create user and send OTP
+   * Register with password (new flow)
    */
   static async register(req: Request, res: Response) {
     try {
-      const { phone, name, role } = req.body;
+      const { phone, name, role, password, email, location } = req.body;
       
       // Validate input
       if (!phone || !name || !role) {
@@ -41,19 +42,39 @@ export class AuthController {
         });
       }
       
-      // Create user
-      const user = await UserService.createUser(phone, name, role);
+      // Hash password if provided
+      let hashedPassword;
+      if (password) {
+        hashedPassword = await bcrypt.hash(password, 10);
+      }
       
-      // Generate OTP
-      const otp = await OTPService.generateOTP(phone);
+      // Create user with password and location
+      const user = await UserService.createUser(phone, name, role, hashedPassword, email, location);
+      
+      // Mark user as verified (skip OTP for password registration)
+      await UserService.verifyUser(user.id);
+      
+      // Generate JWT token immediately
+      const token = JWTService.generateToken({
+        userId: user.id,
+        phone: user.phone,
+        role: user.role,
+      });
       
       res.status(201).json({
         success: true,
-        message: 'Registration initiated. OTP sent to phone.',
+        message: 'Registration successful',
         data: {
-          userId: user.id,
-          phone: user.phone,
-          otpMock: otp, // MVP: Return OTP for testing
+          token,
+          user: {
+            id: user.id,
+            phone: user.phone,
+            fullName: user.name,
+            name: user.name,
+            email: email || undefined,
+            role: user.role,
+            isVerified: true,
+          },
         },
       });
     } catch (error) {
@@ -67,11 +88,11 @@ export class AuthController {
   
   /**
    * POST /api/auth/login
-   * Initiate login - send OTP to existing user
+   * Login with password
    */
   static async login(req: Request, res: Response) {
     try {
-      const { phone } = req.body;
+      const { phone, password } = req.body;
       
       if (!phone) {
         return res.status(400).json({
@@ -89,7 +110,49 @@ export class AuthController {
         });
       }
       
-      // Generate OTP
+      // If password provided, verify it
+      if (password) {
+        if (!user.password) {
+          return res.status(400).json({
+            success: false,
+            message: 'Password not set for this account. Please use OTP login.',
+          });
+        }
+        
+        const isPasswordValid = await bcrypt.compare(password, user.password);
+        if (!isPasswordValid) {
+          return res.status(401).json({
+            success: false,
+            message: 'Incorrect password',
+          });
+        }
+        
+        // Password is valid, generate token
+        const token = JWTService.generateToken({
+          userId: user.id,
+          phone: user.phone,
+          role: user.role,
+        });
+        
+        return res.status(200).json({
+          success: true,
+          message: 'Login successful',
+          data: {
+            token,
+            user: {
+              id: user.id,
+              phone: user.phone,
+              fullName: user.name,
+              name: user.name,
+              email: user.email,
+              role: user.role,
+              isVerified: user.verified,
+            },
+          },
+        });
+      }
+      
+      // No password provided, use OTP flow
       const otp = await OTPService.generateOTP(phone);
       
       res.status(200).json({

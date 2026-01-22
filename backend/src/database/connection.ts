@@ -16,6 +16,12 @@ export interface User {
   name: string;
   role: 'customer' | 'artisan';
   verified: boolean;
+  password?: string; // Hashed password for authentication
+  email?: string;
+  avatar?: string; // Profile picture URL
+  location?: string; // User location/address
+  walletBalance?: number; // Wallet balance in Naira
+  escrowAmount?: number; // Amount in escrow
   createdAt: string;
   updatedAt: string;
 }

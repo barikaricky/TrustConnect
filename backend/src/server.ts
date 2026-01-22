@@ -52,21 +52,25 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
 });
 
 // Start server
-const PORT = config.port;
+const PORT: number = Number(config.port) || 3000;
+const HOST = '0.0.0.0'; // Listen on all network interfaces
 
 async function startServer() {
   try {
     // Connect to MongoDB first
     await connectDB();
     
-    // Then start the server
-    app.listen(PORT, () => {
+    // Then start the server on all network interfaces
+    app.listen(PORT, HOST, () => {
       console.log(`
 ╔═══════════════════════════════════════════╗
 ║  🚀 TrustConnect Backend API             ║
 ║                                           ║
 ║  Status: Running                          ║
 ║  Port: ${PORT}                              ║
+║  Host: ${HOST} (all interfaces)           ║
+║  Local: http://localhost:${PORT}             ║
+║  Network: http://10.80.246.216:${PORT}       ║
 ║  Environment: ${config.nodeEnv}           ║
 ║  Database: MongoDB                        ║
 ║                                           ║

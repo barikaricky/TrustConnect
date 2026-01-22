@@ -7,7 +7,14 @@ export class UserService {
     return await collections.users().findOne({ phone });
   }
 
-  static async createUser(phone: string, name: string, role: 'customer' | 'artisan'): Promise<User> {
+  static async createUser(
+    phone: string, 
+    name: string, 
+    role: 'customer' | 'artisan',
+    password?: string,
+    email?: string,
+    location?: any
+  ): Promise<User> {
     const id = await getNextSequence('userId');
     
     const user: User = {
@@ -16,6 +23,9 @@ export class UserService {
       name,
       role,
       verified: false,
+      password,
+      email,
+      location: location?.address || '',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };

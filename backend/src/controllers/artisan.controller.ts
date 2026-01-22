@@ -201,4 +201,94 @@ export class ArtisanController {
       res.status(500).json({ error: 'Failed to complete registration' });
     }
   }
+
+  /**
+   * Get top-rated artisans near location (public)
+   */
+  static async getTopRated(req: Request, res: Response) {
+    try {
+      const { latitude, longitude, limit = 10 } = req.query;
+      
+      // TODO: Implement geolocation-based search
+      // For now, return verified artisans
+      const { collections } = await import('../database/connection');
+      
+      const artisans = await collections.artisanProfiles()
+        .find({ verificationStatus: 'verified' })
+        .limit(parseInt(limit as string))
+        .toArray();
+      
+      // Get user details for each artisan
+      const results = await Promise.all(
+        artisans.map(async (artisan) => {
+          const user = await collections.users().findOne({ id: artisan.userId });
+          return {
+            id: artisan._id?.toString(),
+            name: user?.name || 'Unknown',
+            trade: artisan.primarySkill,
+            photo: artisan.profilePhotoUrl || 'https://randomuser.me/api/portraits/men/1.jpg',
+            rating: 4.8, // TODO: Implement rating system
+            reviewCount: 120, // TODO: Implement review count
+            verified: true,
+            badge: 'gold',
+            startingPrice: 3000,
+            distance: 2.5, // TODO: Calculate real distance
+          };
+        })
+      );
+      
+      res.json({ artisans: results });
+    } catch (error) {
+      console.error('Get top-rated artisans error:', error);
+      res.status(500).json({ error: 'Failed to fetch artisans' });
+    }
+  }
+
+  /**
+   * Search artisans (public)
+   */
+  static async searchArtisans(req: Request, res: Response) {
+    try {
+      const { query, latitude, longitude } = req.query;
+      
+      // TODO: Implement full-text search
+      const { collections } = await import('../database/connection');
+      
+      const searchQuery: any = query ? { 
+        $or: [
+          { primarySkill: { $regex: query as string, $options: 'i' } },
+          { skillCategory: { $regex: query as string, $options: 'i' } }
+        ],
+        verificationStatus: 'verified' as const
+      } : { verificationStatus: 'verified' as const };
+      
+      const artisans = await collections.artisanProfiles()
+        .find(searchQuery)
+        .limit(20)
+        .toArray();
+      
+      // Get user details for each artisan
+      const results = await Promise.all(
+        artisans.map(async (artisan) => {
+          const user = await collections.users().findOne({ id: artisan.userId });
+          return {
+            id: artisan._id?.toString(),
+            name: user?.name || 'Unknown',
+            trade: artisan.primarySkill,
+            photo: artisan.profilePhotoUrl || 'https://randomuser.me/api/portraits/men/1.jpg',
+            rating: 4.8,
+            reviewCount: 120,
+            verified: true,
+            startingPrice: 3000,
+            distance: 2.5,
+          };
+        })
+      );
+      
+      res.json({ artisans: results });
+    } catch (error) {
+      console.error('Search artisans error:', error);
+      res.status(500).json({ error: 'Failed to search artisans' });
+    }
+  }
 }
