@@ -10,6 +10,8 @@ const app: Application = express();
 app.use(cors({
   origin: config.cors.allowedOrigins,
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-session-token'],
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

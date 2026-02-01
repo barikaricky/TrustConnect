@@ -25,6 +25,9 @@ export const config = {
   },
   
   cors: {
-    allowedOrigins: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:8081'],
+    allowedOrigins: process.env.ALLOWED_ORIGINS?.split(',') || [
+      'http://localhost:8081',  // Mobile app
+      'http://localhost:5173',  // Admin portal
+    ],
   },
 };

@@ -134,6 +134,9 @@ export const collections = {
   otpSessions: () => getDB().collection<OTPSession>('otpSessions'),
   artisanProfiles: () => getDB().collection<ArtisanProfile>('artisanProfiles'),
   verificationHistory: () => getDB().collection<VerificationHistory>('verificationHistory'),
+  admins: () => getDB().collection('admins'),
+  adminSessions: () => getDB().collection('adminSessions'),
+  auditLogs: () => getDB().collection('auditLogs'),
 };
 
 // Close connection
