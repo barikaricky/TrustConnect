@@ -153,14 +153,20 @@ export class ArtisanService {
 
     if (!profile) throw new Error('Failed to initialize profile');
 
+    // Do NOT downgrade an already-verified artisan back to 'pending'
+    const isAlreadyVerified = profile.verificationStatus === 'verified';
+    const newStatus = isAlreadyVerified ? 'verified' : 'pending';
+
     const historyId = await getNextSequence('historyId');
     const history: any = {
       id: historyId,
       artisanProfileId: profile.id,
       previousStatus: profile.verificationStatus,
-      newStatus: 'pending' as const,
+      newStatus: newStatus as const,
       changedBy: 'system',
-      reason: 'Multi-phase registration completed',
+      reason: isAlreadyVerified
+        ? 'Artisan re-submitted registration (profile already verified – status preserved)'
+        : 'Multi-phase registration completed',
       createdAt: new Date().toISOString(),
     };
 
@@ -193,7 +199,7 @@ export class ArtisanService {
           // Trust Agreement
           trustAccepted: data.trustAccepted,
 
-          verificationStatus: 'pending',
+          verificationStatus: newStatus,
           submittedAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         },

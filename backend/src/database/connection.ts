@@ -22,6 +22,13 @@ export interface User {
   location?: string; // User location/address
   walletBalance?: number; // Wallet balance in Naira
   escrowAmount?: number; // Amount in escrow
+  pushToken?: string; // Expo push notification token
+  pushPlatform?: string;
+  pushTokenUpdatedAt?: string;
+  averageRating?: number;
+  totalReviews?: number;
+  trustBadge?: string;
+  ratingUpdatedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -53,6 +60,12 @@ export interface ArtisanProfile {
   bankName?: string;
   accountName?: string;
   trustAccepted?: boolean;
+  // Geospatial location data
+  location?: {
+    latitude: number;
+    longitude: number;
+    address: string;
+  };
   verificationStatus: 'unsubmitted' | 'pending' | 'verified' | 'rejected' | 'suspended';
   adminNotes?: string;
   submittedAt?: string;
@@ -73,6 +86,163 @@ export interface VerificationHistory {
   createdAt: string;
 }
 
+export interface Booking {
+  _id?: ObjectId;
+  id: number;
+  customerId: number;
+  artisanId: number;        // artisanProfile id
+  artisanUserId: number;    // user id of the artisan
+  serviceType: string;      // e.g., 'Plumbing', 'Electrician'
+  description: string;
+  status: 'pending' | 'accepted' | 'rejected' | 'on-the-way' | 'in-progress' | 'completed' | 'cancelled' | 'quoted' | 'funded' | 'job-done' | 'disputed' | 'released';
+  scheduledDate: string;
+  scheduledTime: string;
+  location: {
+    address: string;
+    latitude?: number;
+    longitude?: number;
+  };
+  estimatedPrice?: number;
+  finalPrice?: number;
+  customerNotes?: string;
+  artisanNotes?: string;
+  rating?: number;
+  review?: string;
+  // Escrow fields
+  quoteId?: number;
+  escrowTransactionId?: number;
+  escrowAmount?: number;           // Amount held in escrow (grandTotal)
+  artisanPayout?: number;          // Amount artisan receives (totalCost - 10% commission)
+  platformCommission?: number;     // 10% of totalCost
+  jobDoneAt?: string;
+  releasedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+  cancelledAt?: string;
+}
+
+export interface Review {
+  _id?: ObjectId;
+  id: number;
+  bookingId: number;
+  customerId: number;
+  artisanId: number;
+  rating: number;
+  comment: string;
+  createdAt: string;
+}
+
+export interface ChatConversation {
+  _id?: ObjectId;
+  id: number;
+  customerId: number;
+  artisanUserId: number;
+  bookingId?: number;
+  lastMessage?: string;
+  lastMessageAt?: string;
+  customerUnread: number;
+  artisanUnread: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChatMessage {
+  _id?: ObjectId;
+  id: number;
+  conversationId: number;
+  senderId: number;
+  senderRole: 'customer' | 'artisan' | 'system';
+  type: 'text' | 'image' | 'system' | 'quote';
+  content: string;
+  imageUrl?: string;
+  quoteId?: number; // Reference to quote when type === 'quote'
+  status: 'sent' | 'delivered' | 'read';
+  createdAt: string;
+}
+
+// ─── Module 4: Digital Quotation & Escrow ─────────────────────────
+
+export interface Quote {
+  _id?: ObjectId;
+  id: number;
+  bookingId?: number;
+  conversationId: number;
+  artisanUserId: number;
+  customerId: number;
+  workDescription: string;
+  laborCost: number;        // e.g. 5000
+  materialsCost: number;    // e.g. 3500
+  totalCost: number;        // laborCost + materialsCost = 8500
+  serviceFee: number;       // 5% of totalCost = 425
+  grandTotal: number;       // totalCost + serviceFee = 8925
+  duration: string;         // e.g. "2 days"
+  status: 'sent' | 'accepted' | 'rejected' | 'expired' | 'superseded';
+  version: number;          // For quote revisions
+  previousQuoteId?: number; // Links to previous version
+  acceptedAt?: string;
+  rejectedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Transaction {
+  _id?: ObjectId;
+  id: number;
+  bookingId?: number;
+  quoteId?: number;
+  type: 'escrow_fund' | 'escrow_release' | 'commission' | 'withdrawal' | 'refund' | 'dispute_split' | 'wallet_fund';
+  amount: number;
+  fromUserId?: number;
+  toUserId?: number;
+  paymentRef?: string;       // Internal reference
+  paystackRef?: string;      // Paystack transaction reference
+  paystackAccessCode?: string;
+  status: 'pending' | 'completed' | 'failed' | 'held_in_escrow' | 'released';
+  idempotencyKey?: string;   // Prevent double charges
+  metadata?: Record<string, any>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ─── Module 5: Dispute Management ─────────────────────────────────
+
+export interface Dispute {
+  _id?: ObjectId;
+  id: number;
+  bookingId: number;
+  quoteId?: number;
+  transactionId?: number;
+  raisedBy: number;          // userId who raised the dispute
+  raisedByRole: 'customer' | 'artisan';
+  category: 'incomplete_work' | 'poor_quality' | 'overcharge' | 'no_show' | 'damage' | 'other';
+  description: string;
+  evidenceUrls: string[];    // Min 2 photos required
+  artisanEvidenceUrls: string[];
+  artisanResponse?: string;
+  status: 'open' | 'negotiating' | 'escalated' | 'resolved';
+  negotiationDeadline?: string;  // 48hr from dispute raised
+  // Settlement offers
+  settlementOffers: DisputeSettlementOffer[];
+  // Admin verdict
+  adminVerdict?: 'release_to_artisan' | 'refund_to_customer' | 'split_payment';
+  adminVerdictBy?: number;
+  adminVerdictNote?: string;
+  splitPercentage?: number;  // For split verdicts (artisan's share %)
+  resolvedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DisputeSettlementOffer {
+  offeredBy: number;
+  offeredByRole: 'customer' | 'artisan';
+  amount: number;
+  message?: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  createdAt: string;
+}
+
 export interface CounterDocument {
   _id: string;
   seq: number;
@@ -90,15 +260,63 @@ export async function connectDB(): Promise<Db> {
     await db.collection('users').createIndex({ id: 1 }, { unique: true });
     await db.collection('artisanProfiles').createIndex({ userId: 1 }, { unique: true });
     await db.collection('otpSessions').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+    await db.collection('bookings').createIndex({ customerId: 1 });
+    await db.collection('bookings').createIndex({ artisanUserId: 1 });
+    await db.collection('bookings').createIndex({ status: 1 });
+    await db.collection('reviews').createIndex({ artisanId: 1 });
+    await db.collection('conversations').createIndex({ customerId: 1, artisanUserId: 1 });
+    await db.collection('messages').createIndex({ conversationId: 1, createdAt: 1 });
     
-    // Initialize counters if they don't exist
+    // Module 4 & 5 indexes
+    await db.collection('quotes').createIndex({ conversationId: 1 });
+    await db.collection('quotes').createIndex({ artisanUserId: 1, customerId: 1 });
+    await db.collection('transactions').createIndex({ bookingId: 1 });
+    await db.collection('transactions').createIndex({ idempotencyKey: 1 }, { unique: true, sparse: true });
+    await db.collection('transactions').createIndex({ paystackRef: 1 }, { sparse: true });
+    await db.collection('disputes').createIndex({ bookingId: 1 });
+    await db.collection('disputes').createIndex({ status: 1 });
+    
+    // Initialize counters — sync them with actual collection max IDs
     const counters = db.collection<CounterDocument>('counters');
-    const counterIds = ['userId', 'otpId', 'artisanProfileId', 'historyId'];
+    const counterConfigs: { id: string; collection: string }[] = [
+      { id: 'userId', collection: 'users' },
+      { id: 'otpId', collection: 'otpSessions' },
+      { id: 'artisanProfileId', collection: 'artisanProfiles' },
+      { id: 'historyId', collection: 'verificationHistory' },
+      { id: 'bookingId', collection: 'bookings' },
+      { id: 'reviewId', collection: 'reviews' },
+      { id: 'conversationId', collection: 'conversations' },
+      { id: 'messageId', collection: 'messages' },
+      { id: 'quoteId', collection: 'quotes' },
+      { id: 'transactionId', collection: 'transactions' },
+      { id: 'disputeId', collection: 'disputes' },
+      { id: 'notificationId', collection: 'notifications' },
+    ];
     
-    for (const counterId of counterIds) {
-      const exists = await counters.findOne({ _id: counterId });
-      if (!exists) {
-        await counters.insertOne({ _id: counterId, seq: 1 });
+    for (const cfg of counterConfigs) {
+      // Find the current max id in the collection
+      const maxDoc = await db.collection(cfg.collection)
+        .find({}, { projection: { id: 1 } })
+        .sort({ id: -1 })
+        .limit(1)
+        .toArray();
+      const maxId = maxDoc.length > 0 && maxDoc[0].id ? maxDoc[0].id : 0;
+
+      const current = await counters.findOne({ _id: cfg.id });
+      const currentSeq = current?.seq || 0;
+
+      // If counter is behind the actual max, fix it
+      if (currentSeq <= maxId) {
+        await counters.updateOne(
+          { _id: cfg.id },
+          { $set: { seq: maxId + 1 } },
+          { upsert: true }
+        );
+        if (currentSeq < maxId) {
+          console.log(`  🔧 Fixed counter '${cfg.id}': ${currentSeq} → ${maxId + 1}`);
+        }
+      } else if (!current) {
+        await counters.insertOne({ _id: cfg.id, seq: 1 });
       }
     }
     
@@ -134,9 +352,19 @@ export const collections = {
   otpSessions: () => getDB().collection<OTPSession>('otpSessions'),
   artisanProfiles: () => getDB().collection<ArtisanProfile>('artisanProfiles'),
   verificationHistory: () => getDB().collection<VerificationHistory>('verificationHistory'),
+  bookings: () => getDB().collection<Booking>('bookings'),
+  reviews: () => getDB().collection<Review>('reviews'),
+  conversations: () => getDB().collection<ChatConversation>('conversations'),
+  messages: () => getDB().collection<ChatMessage>('messages'),
   admins: () => getDB().collection('admins'),
   adminSessions: () => getDB().collection('adminSessions'),
   auditLogs: () => getDB().collection('auditLogs'),
+  quotes: () => getDB().collection<Quote>('quotes'),
+  transactions: () => getDB().collection<Transaction>('transactions'),
+  disputes: () => getDB().collection<Dispute>('disputes'),
+  notifications: () => getDB().collection('notifications'),
+  favorites: () => getDB().collection('favorites'),
+  db: () => getDB(),
 };
 
 // Close connection

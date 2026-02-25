@@ -332,6 +332,34 @@
 }
 
 /* Card Footer */
+.dev-login-button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  margin-top: 0.75rem;
+  background: transparent;
+  border: 1px solid var(--accent-gold);
+  color: var(--accent-gold);
+  border-radius: 8px;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.dev-login-button:hover:not(:disabled) {
+  background: rgba(255, 193, 7, 0.1);
+  box-shadow: 0 0 16px rgba(255, 193, 7, 0.15);
+}
+
+.dev-login-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .card-footer {
   margin-top: 1.5rem;
   padding-top: 1.5rem;

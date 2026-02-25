@@ -53,13 +53,37 @@ export class AdminDashboardController {
       });
 
       // Count active jobs
-      const activeJobs = await db.collection('jobs').countDocuments({
-        status: 'in_progress'
+      const activeJobs = await db.collection('bookings').countDocuments({
+        status: { $in: ['in_progress', 'accepted'] }
       });
 
       // Count open disputes
       const openDisputes = await db.collection('disputes').countDocuments({
-        status: 'open'
+        status: { $in: ['open', 'negotiating', 'escalated'] }
+      });
+
+      // Total users
+      const totalUsers = await db.collection('users').countDocuments({});
+      const totalArtisans = await db.collection('users').countDocuments({ role: 'artisan' });
+      const totalCustomers = await db.collection('users').countDocuments({ role: 'customer' });
+
+      // Revenue stats
+      const revenueResult = await db.collection('transactions').aggregate([
+        { $match: { type: 'commission', status: 'completed' } },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
+      ]).toArray();
+      const totalRevenue = revenueResult[0]?.total || 0;
+
+      // Total transaction volume
+      const volumeResult = await db.collection('transactions').aggregate([
+        { $match: { status: { $in: ['completed', 'held_in_escrow', 'released'] } } },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
+      ]).toArray();
+      const totalVolume = volumeResult[0]?.total || 0;
+
+      // Verified artisans
+      const verifiedArtisans = await db.collection('artisanProfiles').countDocuments({
+        verificationStatus: 'verified'
       });
 
       res.json({
@@ -69,7 +93,13 @@ export class AdminDashboardController {
           escrowChange: parseFloat(escrowChange as string),
           pendingVerifications: pendingVerificationsCount,
           activeJobs,
-          openDisputes
+          openDisputes,
+          totalUsers,
+          totalArtisans,
+          totalCustomers,
+          verifiedArtisans,
+          totalRevenue,
+          totalVolume,
         }
       });
     } catch (error) {
@@ -223,12 +253,31 @@ export class AdminDashboardController {
    */
   static async getHealth(req: Request, res: Response) {
     try {
-      // Check external API status
-      // In production, these would be actual health checks
-      const smileIdStatus = 'operational'; // TODO: Implement actual Smile ID health check
-      const paystackStatus = 'operational'; // TODO: Implement actual Paystack health check
+      // Check Flutterwave status
+      let flutterwaveStatus: 'operational' | 'degraded' | 'down' = 'down';
+      const FLW_SECRET = process.env.FLUTTERWAVE_SECRET_KEY || process.env.FLW_SECRET_KEY;
+      if (FLW_SECRET && FLW_SECRET !== 'sk_test_xxxxx') {
+        flutterwaveStatus = 'operational';
+      }
 
-      // Format current time as last login
+      // Check VerifyMe status
+      let verifyMeStatus: 'operational' | 'degraded' | 'down' = 'down';
+      const VERIFYME_KEY = process.env.VERIFYME_API_KEY;
+      if (VERIFYME_KEY && VERIFYME_KEY.length > 5) {
+        verifyMeStatus = 'operational';
+      } else {
+        verifyMeStatus = 'degraded'; // Manual fallback available
+      }
+
+      // MongoDB status
+      let mongoStatus: 'operational' | 'degraded' | 'down' = 'operational';
+      try {
+        const db = getDB();
+        await db.command({ ping: 1 });
+      } catch {
+        mongoStatus = 'down';
+      }
+
       const now = new Date();
       const lastLogin = now.toLocaleTimeString('en-US', {
         hour: '2-digit',
@@ -239,8 +288,9 @@ export class AdminDashboardController {
       res.json({
         success: true,
         health: {
-          smileId: smileIdStatus,
-          paystack: paystackStatus,
+          flutterwave: flutterwaveStatus,
+          verifyMe: verifyMeStatus,
+          mongodb: mongoStatus,
           lastLogin
         }
       });

@@ -16,10 +16,11 @@ export class AuthController {
    */
   static async register(req: Request, res: Response) {
     try {
-      const { phone, name, role, password, email, location } = req.body;
+      const { phone, name, fullName, role, password, email, location } = req.body;
+      const userName = name || fullName; // Accept both 'name' and 'fullName'
       
       // Validate input
-      if (!phone || !name || !role) {
+      if (!phone || !userName || !role) {
         return res.status(400).json({
           success: false,
           message: 'Phone, name, and role are required',
@@ -49,7 +50,7 @@ export class AuthController {
       }
       
       // Create user with password and location
-      const user = await UserService.createUser(phone, name, role, hashedPassword, email, location);
+      const user = await UserService.createUser(phone, userName, role, hashedPassword, email, location);
       
       // Mark user as verified (skip OTP for password registration)
       await UserService.verifyUser(user.id);
@@ -75,13 +76,21 @@ export class AuthController {
             role: user.role,
             isVerified: true,
           },
+          userId: user.id,
         },
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Registration error:', error);
+      // Duplicate phone (not caught above if race condition)
+      if (error.code === 11000 && error.keyPattern?.phone) {
+        return res.status(409).json({
+          success: false,
+          message: 'User with this phone number already exists',
+        });
+      }
       res.status(500).json({
         success: false,
-        message: 'Registration failed',
+        message: error.message || 'Registration failed',
       });
     }
   }
@@ -197,12 +206,18 @@ export class AuthController {
         });
       }
       
-      // Get user
+      // Get user (may not exist for new registration flows)
       const user = await UserService.findByPhone(phone);
       if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: 'User not found',
+        // OTP is valid but user hasn't registered yet - return success for registration flow
+        return res.status(200).json({
+          success: true,
+          message: 'OTP verified. Please complete registration.',
+          data: {
+            phone,
+            verified: true,
+            userExists: false,
+          },
         });
       }
       
@@ -224,8 +239,11 @@ export class AuthController {
           user: {
             id: user.id,
             phone: user.phone,
+            fullName: user.name,
             name: user.name,
+            email: user.email,
             role: user.role,
+            isVerified: true,
             verified: true,
           },
         },
@@ -239,6 +257,103 @@ export class AuthController {
     }
   }
   
+  /**
+   * POST /api/auth/send-otp
+   * Send OTP to any phone number (works for both new and existing users)
+   */
+  static async sendOTP(req: Request, res: Response) {
+    try {
+      const { phone } = req.body;
+      
+      if (!phone) {
+        return res.status(400).json({
+          success: false,
+          message: 'Phone number is required',
+        });
+      }
+      
+      // Generate and store OTP (works for any phone)
+      const otp = await OTPService.generateOTP(phone);
+      
+      // Check if user exists (for informational purposes)
+      const user = await UserService.findByPhone(phone);
+      
+      res.status(200).json({
+        success: true,
+        message: 'OTP sent successfully',
+        data: {
+          phone,
+          otpMock: otp, // MVP: Return OTP for testing
+          userExists: !!user,
+        },
+      });
+    } catch (error) {
+      console.error('Send OTP error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to send OTP',
+      });
+    }
+  }
+
+  /**
+   * POST /api/auth/set-password
+   * Set or update password for existing user
+   */
+  static async setPassword(req: Request, res: Response) {
+    try {
+      const { phone, password, otp } = req.body;
+      
+      if (!phone || !password) {
+        return res.status(400).json({
+          success: false,
+          message: 'Phone and password are required',
+        });
+      }
+      
+      const user = await UserService.findByPhone(phone);
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found',
+        });
+      }
+      
+      // Hash and save password
+      const hashedPassword = await bcrypt.hash(password, 10);
+      await UserService.updatePassword(user.id, hashedPassword);
+      
+      // Generate new token
+      const token = JWTService.generateToken({
+        userId: user.id,
+        phone: user.phone,
+        role: user.role,
+      });
+      
+      res.status(200).json({
+        success: true,
+        message: 'Password set successfully',
+        data: {
+          token,
+          user: {
+            id: user.id,
+            phone: user.phone,
+            fullName: user.name,
+            name: user.name,
+            role: user.role,
+            isVerified: user.verified,
+          },
+        },
+      });
+    } catch (error) {
+      console.error('Set password error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to set password',
+      });
+    }
+  }
+
   /**
    * GET /api/auth/me
    * Get current user info (requires authentication)

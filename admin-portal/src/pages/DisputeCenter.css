@@ -1,0 +1,244 @@
+/* ═══════════════════════════════════════════════
+   Dispute Center – Dark Professional Theme
+   ═══════════════════════════════════════════════ */
+
+.dispute-center {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* ── Loading ── */
+.dispute-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 50vh;
+  gap: 16px;
+  color: var(--text-secondary);
+}
+.spinner-large {
+  width: 36px;
+  height: 36px;
+  border: 3px solid var(--border-color);
+  border-top-color: var(--accent-gold);
+  border-radius: 50%;
+  animation: dc-spin 0.7s linear infinite;
+}
+@keyframes dc-spin { to { transform: rotate(360deg); } }
+
+/* ── Filter Bar ── */
+.filter-bar {
+  display: flex;
+  gap: 8px;
+  padding-bottom: 4px;
+  flex-wrap: wrap;
+}
+.filter-chip {
+  padding: 7px 18px;
+  border-radius: 20px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.86rem;
+}
+.filter-chip:hover { border-color: var(--border-hover); color: var(--text-primary); }
+.filter-chip.active { background: var(--accent-primary); border-color: var(--accent-primary); color: #fff; }
+.chip-badge { background: rgba(255,255,255,0.2); border-radius: 10px; padding: 1px 7px; font-size: 0.72rem; font-weight: 700; }
+
+/* ── Layout ── */
+.dispute-layout {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 18px;
+  align-items: start;
+}
+.dispute-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: calc(100vh - 220px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.empty-state {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--text-muted);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+}
+.empty-icon { font-size: 2.5rem; display: block; margin-bottom: 10px; }
+.empty-state h3 { color: var(--text-secondary); margin-bottom: 6px; }
+.empty-state p { font-size: 0.88rem; }
+
+/* ── Dispute Card ── */
+.dispute-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.dispute-card:hover { border-color: var(--border-hover); box-shadow: var(--shadow-sm); transform: translateY(-1px); }
+.dispute-card.selected { border-color: var(--accent-primary); box-shadow: var(--shadow-glow); background: var(--bg-card-hover); }
+.dispute-card.escalated { border-left: 3px solid var(--error); }
+.card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; gap: 8px; flex-wrap: wrap; }
+.dispute-id { font-size: 0.78rem; font-weight: 700; color: var(--text-muted); }
+.dispute-status {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+.timer-badge { font-size: 0.75rem; font-weight: 700; color: var(--warning); background: var(--warning-bg); padding: 3px 8px; border-radius: 8px; }
+.timer-badge.expired { color: var(--error); background: var(--error-bg); }
+.card-parties { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; font-size: 0.82rem; color: var(--text-secondary); }
+.card-category { font-size: 0.8rem; color: var(--text-muted); text-transform: capitalize; margin-bottom: 6px; }
+.card-bottom { display: flex; align-items: center; justify-content: space-between; }
+.card-amount { font-size: 0.82rem; font-weight: 700; color: var(--accent-gold); }
+.card-time { font-size: 0.76rem; color: var(--text-muted); }
+
+/* Status color-coding */
+.status-open        { background: var(--info-bg);    color: var(--info); }
+.status-escalated   { background: var(--error-bg);   color: var(--error); }
+.status-negotiating { background: var(--warning-bg); color: var(--warning); }
+.status-resolved    { background: var(--success-bg); color: var(--success); }
+.status-closed      { background: rgba(120,144,156,0.1); color: #78909C; }
+
+/* ── Detail Panel ── */
+.dispute-detail {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  position: sticky;
+  top: 20px;
+}
+.detail-empty {
+  text-align: center;
+  padding: 60px 24px;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+.detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+.detail-header h3 { font-size: 0.95rem; font-weight: 700; color: var(--text-primary); margin: 0; }
+.detail-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-height: calc(100vh - 240px);
+  overflow-y: auto;
+}
+.detail-section h4 {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 10px;
+}
+.detail-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.meta-item { display: flex; flex-direction: column; gap: 3px; }
+.meta-label { font-size: 0.72rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.meta-value { font-size: 0.86rem; color: var(--text-primary); font-weight: 500; }
+.description-text {
+  font-size: 0.87rem;
+  color: var(--text-secondary);
+  line-height: 1.65;
+  background: var(--bg-tertiary);
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+}
+.evidence-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.evidence-img { width: 72px; height: 72px; border-radius: var(--radius-md); object-fit: cover; cursor: pointer; border: 1px solid var(--border-color); transition: opacity 0.2s, border-color 0.2s; }
+.evidence-img:hover { opacity: 0.85; border-color: var(--accent-gold); }
+
+/* ── Verdict Form ── */
+.verdict-form { display: flex; flex-direction: column; gap: 12px; }
+.verdict-select, .verdict-textarea {
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 0.87rem;
+  outline: none;
+  font-family: inherit;
+}
+.verdict-textarea { resize: vertical; min-height: 80px; }
+.verdict-select:focus, .verdict-textarea:focus { border-color: var(--accent-gold); }
+.split-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.split-row input[type=range] { flex: 1; accent-color: var(--accent-gold); }
+.split-label { font-size: 0.8rem; color: var(--text-muted); white-space: nowrap; }
+.submit-verdict-btn {
+  padding: 11px 20px;
+  background: var(--accent-primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.15s;
+}
+.submit-verdict-btn:hover { background: var(--accent-hover); transform: translateY(-1px); }
+.submit-verdict-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+/* ── Lightbox ── */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.85);
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.lightbox img { max-width: 90vw; max-height: 90vh; border-radius: var(--radius-lg); box-shadow: var(--shadow-xl); }
+.lightbox-close {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: rgba(255,255,255,0.15);
+  border: none;
+  color: #fff;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  font-size: 1.2rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+.lightbox-close:hover { background: rgba(255,255,255,0.25); }
+
+/* ── Responsive ── */
+@media (max-width: 900px) {
+  .dispute-layout { grid-template-columns: 1fr; }
+  .detail-meta { grid-template-columns: 1fr; }
+}

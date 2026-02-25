@@ -8,13 +8,14 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const { setTwoFactorToken } = useAuth();
+  const { setTwoFactorToken, login } = useAuth();
   
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberDevice, setRememberDevice] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [devLoading, setDevLoading] = useState(false);
   const [error, setError] = useState('');
   const [passwordStrength, setPasswordStrength] = useState({ score: 0, text: '' });
 
@@ -66,6 +67,31 @@ export default function LoginPage() {
       console.error('Login error:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDevLogin = async () => {
+    if (!email || !password) {
+      setError('Please enter email and password');
+      return;
+    }
+    setError('');
+    setDevLoading(true);
+    try {
+      const response = await axios.post(`${API_URL}/admin/auth/dev-login`, {
+        email,
+        password,
+      });
+      if (response.data.success) {
+        login(response.data.admin, response.data.token, response.data.sessionToken);
+        navigate('/dashboard');
+      }
+    } catch (err: any) {
+      const message = err.response?.data?.message || 'Dev login failed. Please try again.';
+      setError(message);
+      console.error('Dev login error:', err);
+    } finally {
+      setDevLoading(false);
     }
   };
 
@@ -215,6 +241,28 @@ export default function LoginPage() {
               )}
             </button>
           </form>
+
+          {/* Dev Login */}
+          <button
+            type="button"
+            className="dev-login-button"
+            onClick={handleDevLogin}
+            disabled={devLoading || !email || !password}
+          >
+            {devLoading ? (
+              <>
+                <div className="spinner"></div>
+                <span>Connecting...</span>
+              </>
+            ) : (
+              <>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                <span>Quick Access (Dev Mode)</span>
+              </>
+            )}
+          </button>
 
           {/* Footer */}
           <div className="card-footer">

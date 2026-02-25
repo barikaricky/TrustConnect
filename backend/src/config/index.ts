@@ -20,7 +20,7 @@ export const config = {
   },
   
   otp: {
-    mockValue: process.env.OTP_MOCK_VALUE || '123456',
+    mockValue: process.env.OTP_MOCK_VALUE || '1234',
     expiryMinutes: parseInt(process.env.OTP_EXPIRY_MINUTES || '5'),
   },
   

@@ -6,12 +6,23 @@ import TwoFactorPage from './pages/TwoFactorPage';
 import AdminDashboard from './pages/AdminDashboard';
 import VerificationCenter from './pages/VerificationCenter';
 import ArtisanReview from './pages/ArtisanReview';
+import DisputeCenter from './pages/DisputeCenter';
+import TransactionLogs from './pages/TransactionLogs';
+import UserManagement from './pages/UserManagement';
+import BroadcastPage from './pages/BroadcastPage';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import Layout from './components/Layout';
 import PageLoader from './components/PageLoader';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
   return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />;
+}
+
+function PrivateRouteWithLayout({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated } = useAuth();
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  return <Layout>{children}</Layout>;
 }
 
 function App() {
@@ -46,25 +57,57 @@ function App() {
               <Route
                 path="/dashboard"
                 element={
-                  <PrivateRoute>
+                  <PrivateRouteWithLayout>
                     <AdminDashboard />
-                  </PrivateRoute>
+                  </PrivateRouteWithLayout>
                 }
               />
               <Route
                 path="/verification"
                 element={
-                  <PrivateRoute>
+                  <PrivateRouteWithLayout>
                     <VerificationCenter />
-                  </PrivateRoute>
+                  </PrivateRouteWithLayout>
                 }
               />
               <Route
                 path="/verification/:id"
                 element={
-                  <PrivateRoute>
+                  <PrivateRouteWithLayout>
                     <ArtisanReview />
-                  </PrivateRoute>
+                  </PrivateRouteWithLayout>
+                }
+              />
+              <Route
+                path="/disputes"
+                element={
+                  <PrivateRouteWithLayout>
+                    <DisputeCenter />
+                  </PrivateRouteWithLayout>
+                }
+              />
+              <Route
+                path="/transactions"
+                element={
+                  <PrivateRouteWithLayout>
+                    <TransactionLogs />
+                  </PrivateRouteWithLayout>
+                }
+              />
+              <Route
+                path="/users"
+                element={
+                  <PrivateRouteWithLayout>
+                    <UserManagement />
+                  </PrivateRouteWithLayout>
+                }
+              />
+              <Route
+                path="/broadcast"
+                element={
+                  <PrivateRouteWithLayout>
+                    <BroadcastPage />
+                  </PrivateRouteWithLayout>
                 }
               />
               <Route path="/" element={<Navigate to="/login" replace />} />

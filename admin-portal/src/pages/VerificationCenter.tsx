@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import adminApi from '../services/api';
 import './VerificationCenter.css';
 
-const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3000/api';
+const API_BASE_URL = '';
 
 interface Artisan {
   id: number;
@@ -45,16 +45,14 @@ const VerificationCenter: React.FC = () => {
 
   const loadVerificationQueue = async () => {
     try {
-      const token = localStorage.getItem('adminToken');
       const params = new URLSearchParams();
       
       if (filters.trade) params.append('trade', filters.trade);
       if (filters.lga) params.append('lga', filters.lga);
       if (filters.priority) params.append('priority', filters.priority);
 
-      const response = await axios.get(
+      const response = await adminApi.get(
         `${API_BASE_URL}/admin/verification/queue?${params}`,
-        { headers: { Authorization: `Bearer ${token}` } }
       );
 
       if (response.data.success) {
@@ -69,10 +67,8 @@ const VerificationCenter: React.FC = () => {
 
   const loadStats = async () => {
     try {
-      const token = localStorage.getItem('adminToken');
-      const response = await axios.get(
+      const response = await adminApi.get(
         `${API_BASE_URL}/admin/verification/stats`,
-        { headers: { Authorization: `Bearer ${token}` } }
       );
 
       if (response.data.success) {
@@ -140,16 +136,6 @@ const VerificationCenter: React.FC = () => {
 
   return (
     <div className="verification-center">
-      {/* Header */}
-      <div className="verification-header">
-        <h1 className="verification-title">
-          🛠️ Verification Center
-          {stats.pending > 0 && (
-            <span className="queue-count-badge">{stats.pending} Awaiting Review</span>
-          )}
-        </h1>
-      </div>
-
       {/* Stats Bar */}
       <div className="stats-bar">
         <div className="stat-card">

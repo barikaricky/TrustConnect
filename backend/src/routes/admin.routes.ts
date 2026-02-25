@@ -2,12 +2,16 @@ import { Router } from 'express';
 import { AdminAuthController } from '../controllers/admin/auth.controller';
 import { AdminDashboardController } from '../controllers/admin/dashboard.controller';
 import { AdminVerificationController } from '../controllers/admin/verification.controller';
+import { AdminManagementController } from '../controllers/admin/management.controller';
 import { 
   requireAdminAuth, 
   requireSuperAdmin,
   AuthenticatedAdminRequest 
 } from '../middleware/admin/auth.middleware';
 import { AdminService } from '../services/admin/admin.service';
+import { JWTService } from '../services/jwt.service';
+import bcrypt from 'bcrypt';
+import crypto from 'crypto';
 
 const router = Router();
 
@@ -38,6 +42,81 @@ router.post('/auth/login', AdminAuthController.login);
  * Step 2: Verify 2FA code and complete login
  */
 router.post('/auth/verify-2fa', AdminAuthController.verify2FA);
+
+/**
+ * POST /api/admin/auth/dev-login
+ * DEV ONLY: Login bypass for development (skips 2FA)
+ * Also auto-creates admin if none exists
+ */
+router.post('/auth/dev-login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ success: false, message: 'Email and password are required' });
+    }
+
+    let admin = await AdminService.findByEmail(email);
+
+    // Auto-create admin if not exists (dev convenience)
+    if (!admin) {
+      const hashedPassword = await bcrypt.hash(password, 12);
+      admin = await AdminService.createAdmin({
+        email,
+        staffId: `TC-${Date.now().toString().slice(-4)}`,
+        name: email.split('@')[0].replace(/[^a-zA-Z]/g, ' ').replace(/^\w/, (c: string) => c.toUpperCase()),
+        password: hashedPassword,
+        role: 'super-admin',
+        twoFactorSecret: 'dev-bypass',
+        approvedIPs: ['*'],
+      });
+      // Enable 2FA so middleware doesn't complain
+      await AdminService.enable2FA(admin.id, 'dev-bypass');
+      console.log(`✅ DEV: Auto-created admin ${email}`);
+    }
+
+    // Verify password
+    const isValid = await bcrypt.compare(password, admin.password);
+    if (!isValid) {
+      return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    }
+
+    // Generate JWT directly (skip 2FA)
+    const token = JWTService.generateToken({
+      adminId: admin.id,
+      email: admin.email,
+      role: admin.role,
+    }, '24h');
+
+    // Create session
+    const ipAddress = req.ip || '127.0.0.1';
+    const userAgent = req.headers['user-agent'] || 'dev-client';
+    const deviceId = crypto.createHash('md5').update(userAgent + ipAddress).digest('hex');
+    const sessionToken = crypto.randomBytes(32).toString('hex');
+
+    await AdminService.createSession(admin.id, sessionToken, ipAddress, userAgent, deviceId, true);
+    await AdminService.updateLastLogin(admin.id);
+
+    console.log(`✅ DEV LOGIN: ${admin.email} (${admin.role})`);
+
+    return res.json({
+      success: true,
+      message: 'Dev login successful',
+      token,
+      sessionToken,
+      admin: {
+        id: admin.id,
+        email: admin.email,
+        name: admin.name,
+        role: admin.role,
+        staffId: admin.staffId,
+      },
+    });
+  } catch (error) {
+    console.error('Dev login error:', error);
+    return res.status(500).json({ success: false, message: 'Dev login failed' });
+  }
+});
 
 // ==========================================
 // PROTECTED ROUTES (Auth Required)
@@ -162,6 +241,60 @@ router.post('/verification/note', requireAdminAuth, AdminVerificationController.
  * Get verification statistics
  */
 router.get('/verification/stats', requireAdminAuth, AdminVerificationController.getVerificationStats);
+
+// ==========================================
+// TRANSACTION MANAGEMENT ROUTES
+// ==========================================
+
+/**
+ * GET /api/admin/transactions
+ * Get all transactions with filters
+ */
+router.get('/transactions', requireAdminAuth, AdminManagementController.getTransactions);
+
+/**
+ * GET /api/admin/transactions/:id
+ * Get single transaction details
+ */
+router.get('/transactions/:id', requireAdminAuth, AdminManagementController.getTransactionById);
+
+// ==========================================
+// USER MANAGEMENT ROUTES
+// ==========================================
+
+/**
+ * GET /api/admin/users
+ * Get all users with filters
+ */
+router.get('/users', requireAdminAuth, AdminManagementController.getUsers);
+
+/**
+ * GET /api/admin/users/:id
+ * Get single user details
+ */
+router.get('/users/:id', requireAdminAuth, AdminManagementController.getUserById);
+
+/**
+ * PATCH /api/admin/users/:id/suspend
+ * Suspend or unsuspend user
+ */
+router.patch('/users/:id/suspend', requireAdminAuth, AdminManagementController.toggleSuspend);
+
+// ==========================================
+// BROADCAST ROUTES
+// ==========================================
+
+/**
+ * POST /api/admin/broadcast
+ * Send broadcast notification
+ */
+router.post('/broadcast', requireAdminAuth, AdminManagementController.sendBroadcast);
+
+/**
+ * GET /api/admin/broadcasts
+ * Get broadcast history
+ */
+router.get('/broadcasts', requireAdminAuth, AdminManagementController.getBroadcasts);
 
 // ==========================================
 // SUPER ADMIN ONLY ROUTES

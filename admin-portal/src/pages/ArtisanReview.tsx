@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import adminApi from '../services/api';
 import './ArtisanReview.css';
 
-const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3000/api';
+const API_BASE_URL = '';
 
 interface ArtisanDetails {
   id: number;
@@ -58,10 +58,8 @@ const ArtisanReview: React.FC = () => {
 
   const loadArtisanDetails = async () => {
     try {
-      const token = localStorage.getItem('adminToken');
-      const response = await axios.get(
+      const response = await adminApi.get(
         `${API_BASE_URL}/admin/verification/artisan/${id}`,
-        { headers: { Authorization: `Bearer ${token}` } }
       );
 
       if (response.data.success) {
@@ -77,10 +75,9 @@ const ArtisanReview: React.FC = () => {
   const handleApprove = async () => {
     try {
       setProcessing(true);
-      const token = localStorage.getItem('adminToken');
       const admin = JSON.parse(localStorage.getItem('admin') || '{}');
 
-      const response = await axios.post(
+      const response = await adminApi.post(
         `${API_BASE_URL}/admin/verification/approve`,
         {
           artisanId: artisan?.id,
@@ -89,7 +86,6 @@ const ArtisanReview: React.FC = () => {
           adminEmail: admin.email,
           notes: internalNote
         },
-        { headers: { Authorization: `Bearer ${token}` } }
       );
 
       if (response.data.success) {
@@ -107,10 +103,9 @@ const ArtisanReview: React.FC = () => {
   const handleRequestCorrection = async () => {
     try {
       setProcessing(true);
-      const token = localStorage.getItem('adminToken');
       const admin = JSON.parse(localStorage.getItem('admin') || '{}');
 
-      const response = await axios.post(
+      const response = await adminApi.post(
         `${API_BASE_URL}/admin/verification/request-correction`,
         {
           artisanId: artisan?.id,
@@ -118,7 +113,6 @@ const ArtisanReview: React.FC = () => {
           adminId: admin.id,
           adminEmail: admin.email
         },
-        { headers: { Authorization: `Bearer ${token}` } }
       );
 
       if (response.data.success) {
@@ -136,10 +130,9 @@ const ArtisanReview: React.FC = () => {
   const handleReject = async () => {
     try {
       setProcessing(true);
-      const token = localStorage.getItem('adminToken');
       const admin = JSON.parse(localStorage.getItem('admin') || '{}');
 
-      const response = await axios.post(
+      const response = await adminApi.post(
         `${API_BASE_URL}/admin/verification/reject`,
         {
           artisanId: artisan?.id,
@@ -148,7 +141,6 @@ const ArtisanReview: React.FC = () => {
           adminEmail: admin.email,
           blacklist
         },
-        { headers: { Authorization: `Bearer ${token}` } }
       );
 
       if (response.data.success) {
@@ -167,10 +159,9 @@ const ArtisanReview: React.FC = () => {
     if (!internalNote.trim()) return;
 
     try {
-      const token = localStorage.getItem('adminToken');
       const admin = JSON.parse(localStorage.getItem('admin') || '{}');
 
-      await axios.post(
+      await adminApi.post(
         `${API_BASE_URL}/admin/verification/note`,
         {
           artisanId: artisan?.id,
@@ -178,7 +169,6 @@ const ArtisanReview: React.FC = () => {
           adminId: admin.id,
           adminName: admin.name
         },
-        { headers: { Authorization: `Bearer ${token}` } }
       );
 
       alert('✅ Note added successfully!');

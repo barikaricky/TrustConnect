@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import adminApi from '../services/api';
 import './AdminDashboard.css';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const API_URL = '';
 
 interface DashboardStats {
   totalEscrowValue: number;
@@ -12,6 +12,12 @@ interface DashboardStats {
   pendingVerifications: number;
   activeJobs: number;
   openDisputes: number;
+  totalUsers: number;
+  totalArtisans: number;
+  totalCustomers: number;
+  verifiedArtisans: number;
+  totalRevenue: number;
+  totalVolume: number;
 }
 
 interface VerificationItem {
@@ -31,13 +37,14 @@ interface ActivityItem {
 }
 
 interface SystemHealth {
-  smileId: 'operational' | 'degraded' | 'down';
-  paystack: 'operational' | 'degraded' | 'down';
+  flutterwave: 'operational' | 'degraded' | 'down';
+  verifyMe: 'operational' | 'degraded' | 'down';
+  mongodb: 'operational' | 'degraded' | 'down';
   lastLogin: string;
 }
 
 const AdminDashboard: React.FC = () => {
-  const { admin, logout } = useAuth();
+  const { admin } = useAuth();
   const navigate = useNavigate();
   const [stats, setStats] = useState<DashboardStats>({
     totalEscrowValue: 0,
@@ -45,36 +52,37 @@ const AdminDashboard: React.FC = () => {
     pendingVerifications: 0,
     activeJobs: 0,
     openDisputes: 0,
+    totalUsers: 0,
+    totalArtisans: 0,
+    totalCustomers: 0,
+    verifiedArtisans: 0,
+    totalRevenue: 0,
+    totalVolume: 0,
   });
   const [verifications, setVerifications] = useState<VerificationItem[]>([]);
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [systemHealth, setSystemHealth] = useState<SystemHealth>({
-    smileId: 'operational',
-    paystack: 'operational',
+    flutterwave: 'operational',
+    verifyMe: 'operational',
+    mongodb: 'operational',
     lastLogin: '',
   });
-  const [activeSection, setActiveSection] = useState('dashboard');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadDashboardData();
-    // Refresh data every 30 seconds
     const interval = setInterval(loadDashboardData, 30000);
     return () => clearInterval(interval);
   }, []);
 
   const loadDashboardData = async () => {
     try {
-      const token = localStorage.getItem('adminToken');
-      const headers = { Authorization: `Bearer ${token}` };
-
       const [statsRes, verificationsRes, activitiesRes, healthRes] = await Promise.all([
-        axios.get(`${API_URL}/admin/dashboard/stats`, { headers }),
-        axios.get(`${API_URL}/admin/dashboard/verifications`, { headers }),
-        axios.get(`${API_URL}/admin/dashboard/activities`, { headers }),
-        axios.get(`${API_URL}/admin/dashboard/health`, { headers }),
+        adminApi.get(`${API_URL}/admin/dashboard/stats`),
+        adminApi.get(`${API_URL}/admin/dashboard/verifications`),
+        adminApi.get(`${API_URL}/admin/dashboard/activities`),
+        adminApi.get(`${API_URL}/admin/dashboard/health`),
       ]);
-
       setStats(statsRes.data.stats);
       setVerifications(verificationsRes.data.verifications);
       setActivities(activitiesRes.data.activities);
@@ -86,272 +94,196 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-NG', {
-      style: 'currency',
-      currency: 'NGN',
-      minimumFractionDigits: 0,
-    }).format(amount);
-  };
+  const fmt = (amount: number) =>
+    new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', minimumFractionDigits: 0 }).format(amount);
 
-  const getTimeAgo = (timestamp: string) => {
-    const now = new Date();
-    const time = new Date(timestamp);
-    const diff = Math.floor((now.getTime() - time.getTime()) / 1000);
-
+  const timeAgo = (ts: string) => {
+    const diff = Math.floor((Date.now() - new Date(ts).getTime()) / 1000);
     if (diff < 60) return 'Just now';
-    if (diff < 3600) return `${Math.floor(diff / 60)} minutes ago`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)} hours ago`;
-    return `${Math.floor(diff / 86400)} days ago`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return `${Math.floor(diff / 86400)}d ago`;
   };
+
+  const activityIcon = (type: string) =>
+    ({ registration: '👤', payment: '💰', dispute: '⚠️', verification: '✅', job: '🔨' }[type] || '📌');
 
   if (loading) {
     return (
-      <div className="dashboard-loading">
-        <div className="spinner-large"></div>
-        <p>Loading dashboard...</p>
+      <div className="dash-loading">
+        <div className="spinner-large" />
+        <p>Loading dashboard…</p>
       </div>
     );
   }
 
   return (
-    <div className="admin-dashboard">
-      {/* Header */}
-      <header className="dashboard-header">
-        <div className="header-left">
-          <h1>🛡️ TrustConnect Admin</h1>
-          <span className="header-subtitle">Command Center</span>
-        </div>
-        <div className="header-right">
-          <div className="admin-info">
-            <div className="admin-avatar">
-              {admin?.name?.charAt(0) || 'A'}
-            </div>
-            <div className="admin-details">
-              <span className="admin-name">{admin?.name}</span>
-              <span className="admin-role">{admin?.role?.replace('-', ' ')}</span>
-            </div>
+    <div className="dash animate-in">
+      {/* ── KPI Cards ── */}
+      <section className="kpi-grid">
+        <div className="kpi-card accent-blue">
+          <div className="kpi-icon">💰</div>
+          <div className="kpi-body">
+            <span className="kpi-label">Total Escrow</span>
+            <span className="kpi-value">{fmt(stats.totalEscrowValue)}</span>
+            <span className={`kpi-change ${stats.escrowChange >= 0 ? 'up' : 'down'}`}>
+              {stats.escrowChange >= 0 ? '↑' : '↓'} {Math.abs(stats.escrowChange)}%
+            </span>
           </div>
-          <button onClick={logout} className="logout-button">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" strokeWidth="2" strokeLinecap="round"/>
-              <polyline points="16 17 21 12 16 7" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              <line x1="21" y1="12" x2="9" y2="12" strokeWidth="2" strokeLinecap="round"/>
-            </svg>
-            Sign Out
-          </button>
         </div>
-      </header>
+        <div className="kpi-card accent-gold">
+          <div className="kpi-icon">📊</div>
+          <div className="kpi-body">
+            <span className="kpi-label">Platform Revenue</span>
+            <span className="kpi-value">{fmt(stats.totalRevenue)}</span>
+            <span className="kpi-sub">Commission earned</span>
+          </div>
+        </div>
+        <div className="kpi-card">
+          <div className="kpi-icon">💳</div>
+          <div className="kpi-body">
+            <span className="kpi-label">Total Volume</span>
+            <span className="kpi-value">{fmt(stats.totalVolume)}</span>
+            <span className="kpi-sub">All transactions</span>
+          </div>
+        </div>
+        <div className={`kpi-card ${stats.pendingVerifications > 50 ? 'accent-warn' : ''}`}>
+          <div className="kpi-icon">🛠️</div>
+          <div className="kpi-body">
+            <span className="kpi-label">Pending Verifications</span>
+            <span className="kpi-value">{stats.pendingVerifications}</span>
+            <span className="kpi-sub">{stats.pendingVerifications > 50 ? '⚠️ High volume' : 'On track'}</span>
+          </div>
+        </div>
+        <div className="kpi-card">
+          <div className="kpi-icon">🏗️</div>
+          <div className="kpi-body">
+            <span className="kpi-label">Active Jobs</span>
+            <span className="kpi-value">{stats.activeJobs}</span>
+            <span className="kpi-sub">Artisans at work</span>
+          </div>
+        </div>
+        <div className={`kpi-card ${stats.openDisputes > 0 ? 'accent-danger' : ''}`}>
+          <div className="kpi-icon">⚠️</div>
+          <div className="kpi-body">
+            <span className="kpi-label">Open Disputes</span>
+            <span className="kpi-value">{stats.openDisputes}</span>
+            <span className="kpi-sub">{stats.openDisputes > 0 ? '🔴 Needs attention' : '✅ All clear'}</span>
+          </div>
+        </div>
+      </section>
 
-      <div className="dashboard-container">
-        {/* Sidebar Navigation */}
-        <aside className="dashboard-sidebar">
-          <nav className="sidebar-nav">
-            <button
-              className={`nav-item ${activeSection === 'dashboard' ? 'active' : ''}`}
-              onClick={() => setActiveSection('dashboard')}
-            >
-              <span className="nav-icon">🏠</span>
-              <span className="nav-text">Dashboard Home</span>
-            </button>
-            <button
-              className={`nav-item ${activeSection === 'verification' ? 'active' : ''}`}
-              onClick={() => navigate('/verification')}
-            >
-              <span className="nav-icon">🛠️</span>
-              <span className="nav-text">Verification Center</span>
-              {stats.pendingVerifications > 0 && (
-                <span className="nav-badge">{stats.pendingVerifications}</span>
-              )}
-            </button>
-            <button
-              className={`nav-item ${activeSection === 'disputes' ? 'active' : ''}`}
-              onClick={() => setActiveSection('disputes')}
-            >
-              <span className="nav-icon">⚖️</span>
-              <span className="nav-text">Dispute Resolution</span>
-              {stats.openDisputes > 0 && (
-                <span className="nav-badge danger">{stats.openDisputes}</span>
-              )}
-            </button>
-            <button
-              className={`nav-item ${activeSection === 'transactions' ? 'active' : ''}`}
-              onClick={() => setActiveSection('transactions')}
-            >
-              <span className="nav-icon">💳</span>
-              <span className="nav-text">Transaction Logs</span>
-            </button>
-            <button
-              className={`nav-item ${activeSection === 'users' ? 'active' : ''}`}
-              onClick={() => setActiveSection('users')}
-            >
-              <span className="nav-icon">👥</span>
-              <span className="nav-text">User Management</span>
-            </button>
-            <button
-              className={`nav-item ${activeSection === 'broadcast' ? 'active' : ''}`}
-              onClick={() => setActiveSection('broadcast')}
-            >
-              <span className="nav-icon">📢</span>
-              <span className="nav-text">Broadcast</span>
-            </button>
-          </nav>
-        </aside>
+      {/* ── Users Row ── */}
+      <section className="kpi-grid kpi-grid-3">
+        <div className="kpi-card">
+          <div className="kpi-icon">👥</div>
+          <div className="kpi-body">
+            <span className="kpi-label">Total Users</span>
+            <span className="kpi-value">{stats.totalUsers.toLocaleString()}</span>
+            <span className="kpi-sub">{stats.totalCustomers} customers · {stats.totalArtisans} artisans</span>
+          </div>
+        </div>
+        <div className="kpi-card">
+          <div className="kpi-icon">🔨</div>
+          <div className="kpi-body">
+            <span className="kpi-label">Artisans</span>
+            <span className="kpi-value">{stats.totalArtisans}</span>
+            <span className="kpi-sub">✅ {stats.verifiedArtisans} verified · ⏳ {stats.totalArtisans - stats.verifiedArtisans} pending</span>
+          </div>
+        </div>
+        <div className="kpi-card">
+          <div className="kpi-icon">🛒</div>
+          <div className="kpi-body">
+            <span className="kpi-label">Customers</span>
+            <span className="kpi-value">{stats.totalCustomers}</span>
+            <span className="kpi-sub">Active customers</span>
+          </div>
+        </div>
+      </section>
 
-        {/* Main Content */}
-        <main className="dashboard-main">
-          {/* Stats at a Glance */}
-          <section className="stats-section">
-            <div className="stat-card">
-              <div className="stat-header">
-                <span className="stat-icon">💰</span>
-                <span className="stat-title">Total Escrow Value</span>
-              </div>
-              <div className="stat-value">{formatCurrency(stats.totalEscrowValue)}</div>
-              <div className={`stat-change ${stats.escrowChange >= 0 ? 'positive' : 'negative'}`}>
-                {stats.escrowChange >= 0 ? '↑' : '↓'} {Math.abs(stats.escrowChange)}% from yesterday
-              </div>
-            </div>
-
-            <div className={`stat-card ${stats.pendingVerifications > 50 ? 'warning' : ''}`}>
-              <div className="stat-header">
-                <span className="stat-icon">🛠️</span>
-                <span className="stat-title">Pending Verifications</span>
-              </div>
-              <div className="stat-value">{stats.pendingVerifications}</div>
-              <div className="stat-subtitle">
-                {stats.pendingVerifications > 50 ? '⚠️ High volume - team slow' : 'On track'}
-              </div>
-            </div>
-
-            <div className="stat-card">
-              <div className="stat-header">
-                <span className="stat-icon">🏗️</span>
-                <span className="stat-title">Active Jobs</span>
-              </div>
-              <div className="stat-value">{stats.activeJobs}</div>
-              <div className="stat-subtitle">Artisans at work</div>
-            </div>
-
-            <div className={`stat-card ${stats.openDisputes > 0 ? 'danger' : ''}`}>
-              <div className="stat-header">
-                <span className="stat-icon">⚠️</span>
-                <span className="stat-title">Open Disputes</span>
-              </div>
-              <div className="stat-value">{stats.openDisputes}</div>
-              <div className="stat-subtitle">
-                {stats.openDisputes > 0 ? '🔴 Requires immediate attention' : '✅ All resolved'}
-              </div>
-            </div>
-          </section>
-
-          {/* Verification Queue Table */}
-          <section className="verification-section">
-            <div className="section-header">
-              <h2>Verification Queue</h2>
-              <button className="view-all-button">View All →</button>
-            </div>
-            <div className="verification-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Artisan Name</th>
-                    <th>Trade</th>
-                    <th>ID Status</th>
-                    <th>Submission Time</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {verifications.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="no-data">
-                        ✅ No pending verifications
+      {/* ── Two-column: Verification Queue + Activity Feed ── */}
+      <div className="dash-columns">
+        {/* Verification Queue */}
+        <section className="panel dash-table-panel">
+          <div className="panel-header">
+            <h2 className="panel-title">Verification Queue</h2>
+            <button className="btn btn-outline btn-sm" onClick={() => navigate('/verification')}>View All →</button>
+          </div>
+          <div className="panel-body no-pad">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Artisan</th>
+                  <th>Trade</th>
+                  <th>ID Status</th>
+                  <th>Submitted</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {verifications.length === 0 ? (
+                  <tr><td colSpan={5} className="empty-row">✅ No pending verifications</td></tr>
+                ) : (
+                  verifications.map((v) => (
+                    <tr key={v.id}>
+                      <td>
+                        <div className="cell-artisan">
+                          <div className="cell-avatar">{v.profilePicture ? <img src={v.profilePicture} alt="" /> : v.name.charAt(0)}</div>
+                          <span>{v.name}</span>
+                        </div>
                       </td>
+                      <td>{v.trade}</td>
+                      <td><span className={`badge ${v.idStatus.toLowerCase().includes('pend') ? 'warning' : v.idStatus.toLowerCase().includes('ver') ? 'success' : 'info'}`}>{v.idStatus}</span></td>
+                      <td>{timeAgo(v.submissionTime)}</td>
+                      <td><button className="btn btn-primary btn-sm" onClick={() => navigate(`/verification/${v.id}`)}>Review</button></td>
                     </tr>
-                  ) : (
-                    verifications.map((item) => (
-                      <tr key={item.id}>
-                        <td>
-                          <div className="artisan-cell">
-                            <div className="artisan-avatar">
-                              {item.profilePicture ? (
-                                <img src={item.profilePicture} alt={item.name} />
-                              ) : (
-                                item.name.charAt(0)
-                              )}
-                            </div>
-                            <span>{item.name}</span>
-                          </div>
-                        </td>
-                        <td>{item.trade}</td>
-                        <td>
-                          <span className={`status-badge ${item.idStatus.toLowerCase().replace(' ', '-')}`}>
-                            {item.idStatus}
-                          </span>
-                        </td>
-                        <td>{getTimeAgo(item.submissionTime)}</td>
-                        <td>
-                          <button className="review-button">Review Details</button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        </main>
-
-        {/* Live Activity Feed */}
-        <aside className="activity-sidebar">
-          <div className="activity-header">
-            <h3>Live Activity</h3>
-            <span className="live-indicator">🔴 LIVE</span>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
-          <div className="activity-feed">
-            {activities.map((activity) => (
-              <div key={activity.id} className={`activity-item ${activity.type}`}>
-                <div className="activity-icon">
-                  {activity.type === 'registration' && '👤'}
-                  {activity.type === 'payment' && '💰'}
-                  {activity.type === 'dispute' && '⚠️'}
-                  {activity.type === 'verification' && '✅'}
-                  {activity.type === 'job' && '🔨'}
-                </div>
-                <div className="activity-content">
-                  <p className="activity-message">{activity.message}</p>
-                  <span className="activity-time">{getTimeAgo(activity.timestamp)}</span>
+        </section>
+
+        {/* Activity Feed */}
+        <aside className="panel dash-activity">
+          <div className="panel-header">
+            <h3 className="panel-title">Live Activity</h3>
+            <span className="live-dot">● LIVE</span>
+          </div>
+          <div className="panel-body activity-scroll">
+            {activities.map((a) => (
+              <div key={a.id} className="activity-row">
+                <span className="activity-emoji">{activityIcon(a.type)}</span>
+                <div className="activity-text">
+                  <p>{a.message}</p>
+                  <small>{timeAgo(a.timestamp)}</small>
                 </div>
               </div>
             ))}
+            {activities.length === 0 && <p className="empty-state-text">No recent activity</p>}
           </div>
         </aside>
       </div>
 
-      {/* System Health Footer */}
-      <footer className="dashboard-footer">
-        <div className="footer-section">
-          <h4>API Status</h4>
-          <div className="api-status">
-            <div className={`status-item ${systemHealth.smileId}`}>
-              <span className="status-dot"></span>
-              <span>Smile ID</span>
-            </div>
-            <div className={`status-item ${systemHealth.paystack}`}>
-              <span className="status-dot"></span>
-              <span>Paystack</span>
-            </div>
+      {/* ── System Health Bar ── */}
+      <section className="health-bar">
+        <div className="health-group">
+          <span className="health-label">API Status</span>
+          <div className="health-items">
+            {(['flutterwave', 'verifyMe', 'mongodb'] as const).map((svc) => (
+              <div key={svc} className={`health-pill ${systemHealth[svc]}`}>
+                <span className="health-dot" />
+                <span>{svc === 'verifyMe' ? 'VerifyMe' : svc.charAt(0).toUpperCase() + svc.slice(1)}</span>
+              </div>
+            ))}
           </div>
         </div>
-        <div className="footer-section">
-          <h4>Admin Logs</h4>
-          <p>Last login: {admin?.name} at {systemHealth.lastLogin || 'Just now'}</p>
+        <div className="health-group">
+          <span className="health-label">Last login</span>
+          <span className="health-value">{admin?.name} · {systemHealth.lastLogin || 'Just now'}</span>
         </div>
-        <div className="footer-section">
-          <p className="footer-copyright">© 2026 TrustConnect. All rights reserved.</p>
-        </div>
-      </footer>
+        <span className="health-copy">© 2026 TrustConnect</span>
+      </section>
     </div>
   );
 };

@@ -3,7 +3,8 @@ import * as dotenv from 'dotenv';
 
 dotenv.config();
 
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/trustconnect';
+const MONGO_URI = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017';
+const DB_NAME = process.env.DB_NAME || 'trustconnect';
 
 const sampleArtisans = [
   {
@@ -268,20 +269,44 @@ async function seedArtisans() {
     await client.connect();
     console.log('✅ Connected to MongoDB');
     
-    const db = client.db();
-    const collection = db.collection('artisanProfiles');
+    const db = client.db(DB_NAME);
+    const artisanCollection = db.collection('artisanProfiles');
+    const usersCollection = db.collection('users');
+    
+    // Create corresponding user records for artisans
+    const sampleUsers = sampleArtisans
+      .filter(a => a.userId)
+      .map(a => ({
+        id: a.userId,
+        name: a.fullName,
+        phone: a.phone,
+        email: a.email,
+        role: 'artisan',
+        verified: false,
+        avatar: a.profilePhotoUrl,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }));
     
     // Clear existing test data
-    await collection.deleteMany({ id: { $in: [1, 2, 3, 4, 5, 6, 7, 8, 9] } });
-    console.log('🗑️  Cleared existing test artisans');
+    const artisanIds = sampleArtisans.map(a => a.id);
+    const userIds = sampleUsers.map(u => u.id);
+    
+    await artisanCollection.deleteMany({ id: { $in: artisanIds } });
+    await usersCollection.deleteMany({ id: { $in: userIds } });
+    console.log('🗑️  Cleared existing test artisans and users');
+    
+    // Insert sample users
+    await usersCollection.insertMany(sampleUsers);
+    console.log(`✅ Inserted ${sampleUsers.length} sample users`);
     
     // Insert sample artisans
-    await collection.insertMany(sampleArtisans);
-    console.log(`✅ Inserted ${sampleArtisans.length} sample artisans`);
+    await artisanCollection.insertMany(sampleArtisans);
+    console.log(`✅ Inserted ${sampleArtisans.length} sample artisan profiles`);
     
     // Display summary
-    const pending = await collection.countDocuments({ verificationStatus: 'pending' });
-    const rejected = await collection.countDocuments({ verificationStatus: 'rejected' });
+    const pending = await artisanCollection.countDocuments({ verificationStatus: 'pending' });
+    const rejected = await artisanCollection.countDocuments({ verificationStatus: 'rejected' });
     
     console.log('\n📊 Summary:');
     console.log(`   Pending: ${pending}`);
