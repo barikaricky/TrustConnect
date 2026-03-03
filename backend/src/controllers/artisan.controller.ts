@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { ArtisanService } from '../services/artisan.service';
+import { normalizeImageUrl, normalizeImageUrls } from '../utils/imageUrl';
 
 export class ArtisanController {
   /**
@@ -15,7 +16,14 @@ export class ArtisanController {
       if (!profile) {
         profile = await ArtisanService.initializeProfile(userId);
       }
-      
+
+      // Normalize image URLs so mobile + admin get full http:// paths
+      if (profile) {
+        (profile as any).profilePhotoUrl  = normalizeImageUrl((profile as any).profilePhotoUrl,  req);
+        (profile as any).governmentIdUrl  = normalizeImageUrl((profile as any).governmentIdUrl,  req);
+        (profile as any).portfolioPhotos  = normalizeImageUrls((profile as any).portfolioPhotos, req);
+      }
+
       res.json(profile);
     } catch (error) {
       console.error('Get profile error:', error);
@@ -146,12 +154,14 @@ export class ArtisanController {
         return res.status(400).json({ error: 'No file uploaded' });
       }
       
-      // Return the file path/URL
-      const fileUrl = `/uploads/${req.file.filename}`;
-      
+      // Return a fully-qualified URL so any client can load it directly
+      const relativePath = `/uploads/${req.file.filename}`;
+      const fileUrl = normalizeImageUrl(relativePath, req) || relativePath;
+
       res.json({
         message: 'File uploaded successfully',
-        fileUrl
+        fileUrl,
+        url: fileUrl,   // alias used by some callers
       });
     } catch (error) {
       console.error('Upload error:', error);
@@ -175,9 +185,12 @@ export class ArtisanController {
         });
       }
 
-      const urls = files.map((file) => `/uploads/portfolio/${file.filename}`);
+      const urls = files.map((file) => {
+        const rel = `/uploads/portfolio/${file.filename}`;
+        return normalizeImageUrl(rel, req) || rel;
+      });
 
-      console.log(`📷 Portfolio: ${files.length} photos uploaded`);
+      console.log(`Portfolio: ${files.length} photos uploaded`);
 
       res.json({
         success: true,
@@ -312,7 +325,7 @@ export class ArtisanController {
           name: user?.name || 'Unknown',
           trade: artisan.primarySkill || artisan.skillCategory || '',
           category: artisan.skillCategory || '',
-          photo: artisan.profilePhotoUrl || null,
+          photo: normalizeImageUrl(artisan.profilePhotoUrl, req),
           rating: avgRating || 4.5,
           reviewCount: reviews.length,
           completedJobs,
@@ -362,7 +375,11 @@ export class ArtisanController {
       
       // Filter 1: Category
       if (category) {
-        searchFilter.skillCategory = { $regex: category as string, $options: 'i' };
+        searchFilter.$or = [
+          { skillCategory: { $regex: category as string, $options: 'i' } },
+          { primarySkill: { $regex: category as string, $options: 'i' } },
+          { primaryTrade: { $regex: category as string, $options: 'i' } },
+        ];
       }
       
       // Filter 3: Verification (default: verified only)
@@ -370,19 +387,61 @@ export class ArtisanController {
         searchFilter.verificationStatus = 'verified';
       }
       
-      // Text search across skill fields
+      // Text search across skill fields in artisan profiles
       if (query) {
-        searchFilter.$or = [
-          { primarySkill: { $regex: query as string, $options: 'i' } },
-          { skillCategory: { $regex: query as string, $options: 'i' } },
-          { fullName: { $regex: query as string, $options: 'i' } },
+        const qStr = query as string;
+        const textFilter = [
+          { primarySkill: { $regex: qStr, $options: 'i' } },
+          { skillCategory: { $regex: qStr, $options: 'i' } },
+          { primaryTrade: { $regex: qStr, $options: 'i' } },
+          { fullName: { $regex: qStr, $options: 'i' } },
+          { workshopAddress: { $regex: qStr, $options: 'i' } },
         ];
+        // If we already have a category $or, combine with $and
+        if (searchFilter.$or) {
+          const catFilter = searchFilter.$or;
+          delete searchFilter.$or;
+          searchFilter.$and = [
+            { $or: catFilter },
+            { $or: textFilter },
+          ];
+        } else {
+          searchFilter.$or = textFilter;
+        }
       }
       
       const artisans = await collections.artisanProfiles()
         .find(searchFilter)
-        .limit(50)
+        .limit(100)
         .toArray();
+      
+      // Also search by user name if query is provided
+      let nameMatchUserIds: Set<number> = new Set();
+      if (query) {
+        const matchingUsers = await collections.users()
+          .find({ name: { $regex: query as string, $options: 'i' } })
+          .project({ id: 1 })
+          .toArray();
+        nameMatchUserIds = new Set(matchingUsers.map(u => u.id));
+        
+        // Find artisan profiles for users matched by name that aren't already in results
+        if (nameMatchUserIds.size > 0) {
+          const existingUserIds = new Set(artisans.map(a => a.userId));
+          const additionalFilter: any = {
+            userId: { $in: [...nameMatchUserIds].filter(id => !existingUserIds.has(id)) },
+          };
+          if (verified_only !== 'false') {
+            additionalFilter.verificationStatus = 'verified';
+          }
+          if (additionalFilter.userId.$in.length > 0) {
+            const nameMatched = await collections.artisanProfiles()
+              .find(additionalFilter)
+              .limit(20)
+              .toArray();
+            artisans.push(...nameMatched);
+          }
+        }
+      }
       
       // Haversine distance calculation
       const haversineDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
@@ -421,16 +480,30 @@ export class ArtisanController {
           ? Math.round((reviews.reduce((s, r) => s + r.rating, 0) / reviews.length) * 10) / 10
           : 0;
         const completedJobs = await collections.bookings().countDocuments({
-          artisanId: artisan.id, status: 'completed',
+          artisanId: artisan.id, status: { $in: ['completed', 'released'] },
         });
+        
+        // Calculate search relevance score
+        let relevanceScore = 0;
+        const qStr = query ? (query as string).toLowerCase() : '';
+        const userName = (user?.name || '').toLowerCase();
+        const trade = (artisan.primarySkill || (artisan as any).primaryTrade || '').toLowerCase();
+        const catStr = (artisan.skillCategory || '').toLowerCase();
+        
+        if (qStr) {
+          if (userName.includes(qStr)) relevanceScore += 10;
+          if (trade.includes(qStr)) relevanceScore += 8;
+          if (catStr.includes(qStr)) relevanceScore += 6;
+          if (nameMatchUserIds.has(artisan.userId)) relevanceScore += 5;
+        }
         
         return {
           id: artisan._id?.toString() || String(artisan.id),
           profileId: artisan.id,
           name: user?.name || 'Unknown',
-          trade: artisan.primarySkill || artisan.skillCategory || '',
+          trade: artisan.primarySkill || (artisan as any).primaryTrade || artisan.skillCategory || '',
           category: artisan.skillCategory || '',
-          photo: artisan.profilePhotoUrl || null,
+          photo: normalizeImageUrl(artisan.profilePhotoUrl, req),
           rating: avgRating || 4.5,
           reviewCount: reviews.length,
           completedJobs,
@@ -440,6 +513,7 @@ export class ArtisanController {
           distance: Math.round(distance * 10) / 10,
           yearsExperience: artisan.yearsExperience || 0,
           workshopAddress: artisan.workshopAddress || '',
+          relevanceScore,
         };
       });
       
@@ -450,8 +524,15 @@ export class ArtisanController {
         results = results.filter(a => a.distance <= maxRadius);
       }
       
-      // Sort by relevance: rating desc, distance asc
-      results.sort((a, b) => b.rating - a.rating || a.distance - b.distance);
+      // Sort by relevance, then rating, then distance
+      results.sort((a, b) => {
+        if (query && a.relevanceScore !== b.relevanceScore) return b.relevanceScore - a.relevanceScore;
+        if (b.rating !== a.rating) return b.rating - a.rating;
+        return a.distance - b.distance;
+      });
+      
+      // Remove internal fields and limit
+      results = results.slice(0, 50).map(({ relevanceScore, ...rest }) => rest as any);
       
       res.json({ artisans: results, total: results.length });
     } catch (error) {

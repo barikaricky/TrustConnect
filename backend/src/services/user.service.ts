@@ -3,18 +3,42 @@ import { collections, getNextSequence, User } from '../database/connection';
 export { User };
 
 export class UserService {
+  /**
+   * Normalise any Nigerian phone format to +234XXXXXXXXXX.
+   * Handles: +2348012345678 | 2348012345678 | 08012345678 | 8012345678
+   */
+  static normalizePhone(phone: string): string {
+    const cleaned = phone.replace(/[\s\-]/g, '');
+    if (cleaned.startsWith('+234')) return cleaned;            // already canonical
+    if (cleaned.startsWith('234'))  return '+' + cleaned;      // missing +
+    if (cleaned.startsWith('0'))    return '+234' + cleaned.slice(1); // local 0xxxxxx
+    return '+234' + cleaned;                                   // bare digits
+  }
+
+  /**
+   * Look up user by phone – tries canonical form first, then the raw form,
+   * so existing records stored without +234 are still found.
+   */
   static async findByPhone(phone: string): Promise<User | null> {
-    return await collections.users().findOne({ phone });
+    const canonical = UserService.normalizePhone(phone);
+    // Try canonical (+234…) first, then exact input as fallback
+    const user =
+      await collections.users().findOne({ phone: canonical }) ??
+      (canonical !== phone ? await collections.users().findOne({ phone }) : null);
+    return user ?? null;
   }
 
   static async createUser(
     phone: string, 
     name: string, 
-    role: 'customer' | 'artisan',
+    role: 'customer' | 'artisan' | 'company',
     password?: string,
     email?: string,
     location?: any
   ): Promise<User> {
+    // Always store phone in canonical +234 format
+    const canonicalPhone = UserService.normalizePhone(phone);
+
     // Retry loop to handle counter sync issues (duplicate id)
     let attempts = 0;
     while (attempts < 5) {
@@ -22,7 +46,7 @@ export class UserService {
       
       const user: User = {
         id,
-        phone,
+        phone: canonicalPhone,
         name,
         role,
         verified: false,

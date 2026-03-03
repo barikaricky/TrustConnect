@@ -13,6 +13,8 @@ import verificationRoutes from './verification.routes';
 import paymentRoutes from './payment.routes';
 import notificationRoutes from './notification.routes';
 import reviewRoutes from './review.routes';
+import companyRoutes from './company.routes';
+import settingsRoutes from './settings.routes';
 
 const router = Router();
 
@@ -20,6 +22,7 @@ const router = Router();
 router.use('/auth', authRoutes);
 router.use('/artisan', artisanRoutes);
 router.use('/customer', customerRoutes);
+router.use('/company', companyRoutes);
 router.use('/admin', adminRoutes);
 router.use('/booking', bookingRoutes);
 router.use('/chat', chatRoutes);
@@ -31,6 +34,7 @@ router.use('/verification', verificationRoutes);
 router.use('/payment', paymentRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/reviews', reviewRoutes);
+router.use('/settings', settingsRoutes);
 
 // Health check
 router.get('/health', (req, res) => {

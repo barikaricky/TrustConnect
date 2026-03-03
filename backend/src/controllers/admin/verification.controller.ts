@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { getDB } from '../../database/connection';
+import { normalizeImageUrl, normalizeImageUrls } from '../../utils/imageUrl';
 
 /**
  * Admin Verification Controller
@@ -64,7 +65,7 @@ export class AdminVerificationController {
             trade: profile.primarySkill || profile.skillCategory,
             location: profile.workshopAddress,
             submittedAt: profile.submittedAt || profile.createdAt,
-            profilePhoto: profile.profilePhotoUrl,
+            profilePhoto: normalizeImageUrl(profile.profilePhotoUrl, req),
             idType: profile.idType,
             idNumber: profile.idNumber,
             priorityTag,
@@ -148,8 +149,8 @@ export class AdminVerificationController {
         // Identity Verification
         idType: profile.idType,
         idNumber: profile.idNumber,
-        governmentIdUrl: profile.governmentIdUrl,
-        profilePhotoUrl: profile.profilePhotoUrl,
+        governmentIdUrl: normalizeImageUrl(profile.governmentIdUrl, req),
+        profilePhotoUrl: normalizeImageUrl(profile.profilePhotoUrl, req),
         faceMatchScore: profile.faceMatchScore || null,
         ninVerified: profile.ninVerified || false,
         
@@ -158,7 +159,7 @@ export class AdminVerificationController {
         skillCategory: profile.skillCategory,
         yearsExperience: profile.yearsExperience,
         workshopAddress: profile.workshopAddress,
-        portfolioPhotos: profile.portfolioPhotos || [],
+        portfolioPhotos: normalizeImageUrls(profile.portfolioPhotos, req),
         
         // Financial Info
         bankName: profile.bankName,

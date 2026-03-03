@@ -8,6 +8,8 @@ import {
   addReview,
   getArtisanReviews,
   getArtisanDetail,
+  releaseFund,
+  submitWorkProof,
 } from '../controllers/booking.controller';
 
 const router = Router();
@@ -21,6 +23,8 @@ router.post('/create', createBooking);
 router.get('/:id', getBookingById);
 router.put('/:id/status', updateBookingStatus);
 router.post('/:id/review', addReview);
+router.post('/:id/release-fund', releaseFund);
+router.post('/:id/submit-work-proof', submitWorkProof);
 
 // === Customer bookings ===
 router.get('/customer/:customerId', getCustomerBookings);

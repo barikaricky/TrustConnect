@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { normalizeImageUrl } from '../utils/imageUrl';
 
 // Get customer profile
 export const getCustomerProfile = async (req: Request, res: Response) => {
@@ -19,7 +20,7 @@ export const getCustomerProfile = async (req: Request, res: Response) => {
       fullName: user.name,
       email: user.email || '',
       phone: user.phone,
-      avatar: user.avatar || null,
+      avatar: normalizeImageUrl(user.avatar, req),
       isVerified: user.verified || false,
       joinDate: user.createdAt || new Date().toISOString(),
       trustScore: 4.8, // TODO: Implement trust score calculation

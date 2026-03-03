@@ -14,7 +14,7 @@ export interface User {
   id: number;
   phone: string;
   name: string;
-  role: 'customer' | 'artisan';
+  role: 'customer' | 'artisan' | 'company';
   verified: boolean;
   password?: string; // Hashed password for authentication
   email?: string;
@@ -86,6 +86,43 @@ export interface VerificationHistory {
   createdAt: string;
 }
 
+export interface CompanyProfile {
+  _id?: ObjectId;
+  id: number;
+  userId: number;
+  companyName: string;
+  rcNumber: string;                  // CAC Registration Number
+  companyType: 'limited_liability' | 'sole_proprietorship' | 'partnership' | 'enterprise';
+  industry: string;
+  description?: string;
+  yearEstablished?: number;
+  numberOfEmployees?: string;
+  serviceCategories: string[];
+  tin?: string;                      // Tax Identification Number
+  companyEmail?: string;
+  companyPhone?: string;
+  website?: string;
+  address: string;
+  state: string;
+  lga: string;
+  location?: {
+    latitude: number;
+    longitude: number;
+    address: string;
+  };
+  logoUrl?: string;
+  cacDocumentUrl?: string;
+  bankName?: string;
+  accountNumber?: string;
+  accountName?: string;
+  verificationStatus: 'unsubmitted' | 'pending' | 'verified' | 'rejected' | 'suspended';
+  adminNotes?: string;
+  submittedAt?: string;
+  verifiedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Booking {
   _id?: ObjectId;
   id: number;
@@ -116,6 +153,8 @@ export interface Booking {
   platformCommission?: number;     // 10% of totalCost
   jobDoneAt?: string;
   releasedAt?: string;
+  workProofPhotos?: string[];  // 3 photos artisan uploads as proof of completion
+  workProofSubmittedAt?: string;
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
@@ -153,10 +192,11 @@ export interface ChatMessage {
   conversationId: number;
   senderId: number;
   senderRole: 'customer' | 'artisan' | 'system';
-  type: 'text' | 'image' | 'system' | 'quote';
+  type: 'text' | 'image' | 'system' | 'quote' | 'work_proof';
   content: string;
   imageUrl?: string;
   quoteId?: number; // Reference to quote when type === 'quote'
+  workProofPhotos?: string[]; // 3 proof photos when type === 'work_proof'
   status: 'sent' | 'delivered' | 'read';
   createdAt: string;
 }
@@ -198,7 +238,7 @@ export interface Transaction {
   paymentRef?: string;       // Internal reference
   paystackRef?: string;      // Paystack transaction reference
   paystackAccessCode?: string;
-  status: 'pending' | 'completed' | 'failed' | 'held_in_escrow' | 'released';
+  status: 'pending' | 'completed' | 'failed' | 'held_in_escrow' | 'released' | 'refunded';
   idempotencyKey?: string;   // Prevent double charges
   metadata?: Record<string, any>;
   createdAt: string;
@@ -275,6 +315,8 @@ export async function connectDB(): Promise<Db> {
     await db.collection('transactions').createIndex({ paystackRef: 1 }, { sparse: true });
     await db.collection('disputes').createIndex({ bookingId: 1 });
     await db.collection('disputes').createIndex({ status: 1 });
+    await db.collection('companyProfiles').createIndex({ userId: 1 }, { unique: true });
+    await db.collection('companyProfiles').createIndex({ rcNumber: 1 }, { sparse: true });
     
     // Initialize counters — sync them with actual collection max IDs
     const counters = db.collection<CounterDocument>('counters');
@@ -291,6 +333,7 @@ export async function connectDB(): Promise<Db> {
       { id: 'transactionId', collection: 'transactions' },
       { id: 'disputeId', collection: 'disputes' },
       { id: 'notificationId', collection: 'notifications' },
+      { id: 'companyProfileId', collection: 'companyProfiles' },
     ];
     
     for (const cfg of counterConfigs) {
@@ -351,6 +394,7 @@ export const collections = {
   users: () => getDB().collection<User>('users'),
   otpSessions: () => getDB().collection<OTPSession>('otpSessions'),
   artisanProfiles: () => getDB().collection<ArtisanProfile>('artisanProfiles'),
+  companyProfiles: () => getDB().collection<CompanyProfile>('companyProfiles'),
   verificationHistory: () => getDB().collection<VerificationHistory>('verificationHistory'),
   bookings: () => getDB().collection<Booking>('bookings'),
   reviews: () => getDB().collection<Review>('reviews'),

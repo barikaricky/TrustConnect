@@ -1,8 +1,13 @@
 import { Request, Response } from 'express';
 import { collections, getNextSequence } from '../database/connection';
+import { normalizeImageUrl, normalizeImageUrls } from '../utils/imageUrl';
+import { notifyUser } from './notification.controller';
 
 /**
  * Create a new booking / hire request
+ * ─ Validates wallet balance ≥ estimatedPrice
+ * ─ Holds funds in escrow automatically
+ * ─ Sends artisan location to customer
  */
 export const createBooking = async (req: Request, res: Response) => {
   try {
@@ -53,6 +58,19 @@ export const createBooking = async (req: Request, res: Response) => {
 
     artisanUserId = artisan.userId;
 
+    // ── BALANCE CHECK: customer must have enough funds ──
+    const price = estimatedPrice ? parseFloat(estimatedPrice) : 3000;
+    const customerBalance = customer.walletBalance || 0;
+    if (customerBalance < price) {
+      return res.status(400).json({
+        error: 'Insufficient wallet balance',
+        code: 'INSUFFICIENT_BALANCE',
+        required: price,
+        available: customerBalance,
+        message: `You need ₦${price.toLocaleString()} but only have ₦${customerBalance.toLocaleString()} in your wallet. Please top up before booking.`,
+      });
+    }
+
     const bookingId = await getNextSequence('bookingId');
     const now = new Date().toISOString();
 
@@ -71,7 +89,8 @@ export const createBooking = async (req: Request, res: Response) => {
         latitude: location.latitude,
         longitude: location.longitude,
       },
-      estimatedPrice: estimatedPrice ? parseFloat(estimatedPrice) : undefined,
+      estimatedPrice: price,
+      escrowAmount: price,
       customerNotes: customerNotes || '',
       createdAt: now,
       updatedAt: now,
@@ -79,8 +98,60 @@ export const createBooking = async (req: Request, res: Response) => {
 
     await collections.bookings().insertOne(booking);
 
+    // ── ESCROW HOLD: deduct from wallet, add to escrow ──
+    await collections.users().updateOne(
+      { id: parseInt(customerId) },
+      {
+        $inc: {
+          walletBalance: -price,
+          escrowAmount: price,
+        },
+      }
+    );
+
+    // Create escrow hold transaction
+    const txId = await getNextSequence('transactionId');
+    await collections.transactions().insertOne({
+      id: txId,
+      bookingId,
+      type: 'escrow_fund',
+      amount: price,
+      fromUserId: parseInt(customerId),
+      toUserId: undefined,
+      paymentRef: `TC-ESC-AUTO-${bookingId}-${Date.now()}`,
+      status: 'held_in_escrow',
+      metadata: {
+        autoHeld: true,
+        artisanUserId,
+        serviceType,
+        description: `Escrow hold for booking #${bookingId}`,
+      },
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // Update booking with escrow transaction reference
+    await collections.bookings().updateOne(
+      { id: bookingId },
+      { $set: { escrowTransactionId: txId } }
+    );
+
     // Get artisan user details for response
     const artisanUser = await collections.users().findOne({ id: artisanUserId });
+
+    // ── LOCATION: include artisan workshop address for the customer ──
+    const artisanLocation = artisan.workshopAddress || artisan.location || '';
+
+    // Notify artisan about new booking
+    const io = (req.app as any).io;
+    await notifyUser(
+      artisanUserId,
+      '📋 New Job Request!',
+      `${customer.name || 'A customer'} wants to book you for ${serviceType}. ₦${price.toLocaleString()} held in escrow.`,
+      'booking',
+      { bookingId },
+      io
+    );
 
     res.status(201).json({
       success: true,
@@ -90,7 +161,9 @@ export const createBooking = async (req: Request, res: Response) => {
         artisanName: artisanUser?.name || 'Unknown',
         artisanPhone: artisanUser?.phone || '',
         artisanTrade: artisan.primarySkill,
-        artisanPhoto: artisan.profilePhotoUrl || null,
+        artisanPhoto: normalizeImageUrl(artisan.profilePhotoUrl, req),
+        artisanLocation,
+        escrowHeld: price,
       },
     });
   } catch (error) {
@@ -147,7 +220,7 @@ export const getCustomerBookings = async (req: Request, res: Response) => {
       .sort({ createdAt: -1 })
       .toArray();
 
-    // Enrich with artisan details
+    // Enrich with artisan details + location + escrow info
     const enriched = await Promise.all(
       bookings.map(async (booking) => {
         const artisanUser = await collections.users().findOne({ id: booking.artisanUserId });
@@ -157,7 +230,9 @@ export const getCustomerBookings = async (req: Request, res: Response) => {
           artisanName: artisanUser?.name || 'Unknown',
           artisanPhone: artisanUser?.phone || '',
           artisanTrade: artisanProfile?.primarySkill || '',
-          artisanPhoto: artisanProfile?.profilePhotoUrl || null,
+          artisanPhoto: normalizeImageUrl(artisanProfile?.profilePhotoUrl, req),
+          artisanLocation: artisanProfile?.workshopAddress || '',
+          escrowHeld: booking.escrowAmount || booking.estimatedPrice || 0,
         };
       })
     );
@@ -206,6 +281,10 @@ export const getArtisanBookings = async (req: Request, res: Response) => {
 
 /**
  * Update booking status
+ * ─ on-the-way: notifies customer with artisan location
+ * ─ in-progress: artisan started working
+ * ─ job-done: notifies customer to review & release funds
+ * ─ cancelled: refunds escrow to customer wallet
  */
 export const updateBookingStatus = async (req: Request, res: Response) => {
   try {
@@ -217,6 +296,11 @@ export const updateBookingStatus = async (req: Request, res: Response) => {
       return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` });
     }
 
+    const booking = await collections.bookings().findOne({ id: bookingId });
+    if (!booking) {
+      return res.status(404).json({ error: 'Booking not found' });
+    }
+
     const updateFields: any = {
       status,
       updatedAt: new Date().toISOString(),
@@ -226,6 +310,7 @@ export const updateBookingStatus = async (req: Request, res: Response) => {
     if (finalPrice) updateFields.finalPrice = parseFloat(finalPrice);
     if (status === 'completed') updateFields.completedAt = new Date().toISOString();
     if (status === 'cancelled') updateFields.cancelledAt = new Date().toISOString();
+    if (status === 'job-done') updateFields.jobDoneAt = new Date().toISOString();
 
     const result = await collections.bookings().findOneAndUpdate(
       { id: bookingId },
@@ -235,6 +320,107 @@ export const updateBookingStatus = async (req: Request, res: Response) => {
 
     if (!result) {
       return res.status(404).json({ error: 'Booking not found' });
+    }
+
+    const io = (req.app as any).io;
+
+    // ── STATUS-SPECIFIC ACTIONS ──
+
+    // CANCELLED: refund escrow to customer
+    if (status === 'cancelled' && booking.escrowAmount && booking.escrowAmount > 0) {
+      await collections.users().updateOne(
+        { id: booking.customerId },
+        {
+          $inc: {
+            walletBalance: booking.escrowAmount,
+            escrowAmount: -booking.escrowAmount,
+          },
+        }
+      );
+      // Update escrow transaction
+      if (booking.escrowTransactionId) {
+        await collections.transactions().updateOne(
+          { id: booking.escrowTransactionId },
+          { $set: { status: 'refunded', updatedAt: new Date().toISOString() } }
+        );
+      }
+      // Create refund transaction
+      const refundTxId = await getNextSequence('transactionId');
+      await collections.transactions().insertOne({
+        id: refundTxId,
+        bookingId,
+        type: 'refund',
+        amount: booking.escrowAmount,
+        toUserId: booking.customerId,
+        status: 'completed',
+        metadata: { reason: 'Booking cancelled', originalTxId: booking.escrowTransactionId },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      await notifyUser(booking.customerId, '💰 Refund Processed', `₦${booking.escrowAmount.toLocaleString()} has been returned to your wallet.`, 'escrow', { bookingId }, io);
+    }
+
+    // REJECTED: refund escrow to customer
+    if (status === 'rejected' && booking.escrowAmount && booking.escrowAmount > 0) {
+      await collections.users().updateOne(
+        { id: booking.customerId },
+        {
+          $inc: {
+            walletBalance: booking.escrowAmount,
+            escrowAmount: -booking.escrowAmount,
+          },
+        }
+      );
+      if (booking.escrowTransactionId) {
+        await collections.transactions().updateOne(
+          { id: booking.escrowTransactionId },
+          { $set: { status: 'refunded', updatedAt: new Date().toISOString() } }
+        );
+      }
+      const refundTxId = await getNextSequence('transactionId');
+      await collections.transactions().insertOne({
+        id: refundTxId,
+        bookingId,
+        type: 'refund',
+        amount: booking.escrowAmount,
+        toUserId: booking.customerId,
+        status: 'completed',
+        metadata: { reason: 'Artisan rejected booking' },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      await notifyUser(booking.customerId, '❌ Booking Declined', `The artisan declined your request. ₦${booking.escrowAmount.toLocaleString()} has been refunded.`, 'booking', { bookingId }, io);
+    }
+
+    // ACCEPTED: notify customer with artisan location
+    if (status === 'accepted') {
+      const artisanProfile = await collections.artisanProfiles().findOne({ userId: booking.artisanUserId });
+      const artisanLocation = artisanProfile?.workshopAddress || '';
+      await notifyUser(booking.customerId, '✅ Booking Accepted!', `Your artisan has accepted the job! Location: ${artisanLocation || 'Will be shared when on the way'}`, 'booking', { bookingId, artisanLocation }, io);
+    }
+
+    // ON-THE-WAY: notify customer with artisan location
+    if (status === 'on-the-way') {
+      const artisanProfile = await collections.artisanProfiles().findOne({ userId: booking.artisanUserId });
+      const artisanLocation = artisanProfile?.workshopAddress || '';
+      await notifyUser(booking.customerId, '🚗 Artisan On The Way!', `Your artisan is heading to you from: ${artisanLocation}`, 'booking', { bookingId, artisanLocation }, io);
+    }
+
+    // IN-PROGRESS: artisan started working
+    if (status === 'in-progress') {
+      await notifyUser(booking.customerId, '🔧 Work Started', 'The artisan has started working on your job.', 'booking', { bookingId }, io);
+    }
+
+    // JOB-DONE: notify customer to review and release funds
+    if (status === 'job-done') {
+      await notifyUser(
+        booking.customerId,
+        '🔧 Job Completed!',
+        'The artisan has finished working. Please review the work and release payment.',
+        'booking',
+        { bookingId, action: 'release_fund' },
+        io
+      );
     }
 
     res.json({
@@ -429,12 +615,12 @@ export const getArtisanDetail = async (req: Request, res: Response) => {
       name: user?.name || 'Unknown',
       phone: user?.phone || '',
       email: user?.email || '',
-      avatar: artisan.profilePhotoUrl || user?.avatar || null,
+      avatar: normalizeImageUrl(artisan.profilePhotoUrl, req) || normalizeImageUrl((user as any)?.avatar, req) || null,
       trade: artisan.primarySkill || artisan.skillCategory || '',
       category: artisan.skillCategory || '',
       yearsExperience: artisan.yearsExperience || 0,
       workshopAddress: artisan.workshopAddress || '',
-      portfolioPhotos: artisan.portfolioPhotos || [],
+      portfolioPhotos: normalizeImageUrls(artisan.portfolioPhotos, req),
       verified: artisan.verificationStatus === 'verified',
       verificationStatus: artisan.verificationStatus,
       rating: Math.round(avgRating * 10) / 10,
@@ -446,5 +632,238 @@ export const getArtisanDetail = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Get artisan detail error:', error);
     res.status(500).json({ error: 'Failed to fetch artisan details' });
+  }
+};
+
+/**
+ * POST /api/booking/:id/release-fund
+ * Customer confirms work is done and releases escrow to artisan wallet
+ * Commission: 10% deducted, 90% goes to artisan
+ */
+export const releaseFund = async (req: Request, res: Response) => {
+  try {
+    const bookingId = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
+    const { customerId } = req.body;
+
+    if (!customerId) {
+      return res.status(400).json({ error: 'customerId is required' });
+    }
+
+    const booking = await collections.bookings().findOne({ id: bookingId });
+    if (!booking) {
+      return res.status(404).json({ error: 'Booking not found' });
+    }
+    if (booking.customerId !== parseInt(customerId)) {
+      return res.status(403).json({ error: 'Only the customer who booked can release funds' });
+    }
+    if (booking.status !== 'job-done') {
+      return res.status(400).json({ error: `Cannot release funds from status: ${booking.status}. Job must be marked as done first.` });
+    }
+
+    const now = new Date().toISOString();
+    const escrowAmount = booking.escrowAmount || booking.estimatedPrice || 0;
+    const COMMISSION_RATE = 0.10; // 10%
+    const commission = Math.round(escrowAmount * COMMISSION_RATE);
+    const artisanPayout = escrowAmount - commission;
+
+    // 1. Update escrow transaction to released
+    if (booking.escrowTransactionId) {
+      await collections.transactions().updateOne(
+        { id: booking.escrowTransactionId },
+        { $set: { status: 'released', updatedAt: now } }
+      );
+    }
+
+    // 2. Commission transaction
+    const commTxId = await getNextSequence('transactionId');
+    await collections.transactions().insertOne({
+      id: commTxId,
+      bookingId,
+      type: 'commission',
+      amount: commission,
+      fromUserId: booking.artisanUserId,
+      status: 'completed',
+      metadata: { commissionRate: COMMISSION_RATE, grossAmount: escrowAmount },
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // 3. Release transaction (artisan payout)
+    const releaseTxId = await getNextSequence('transactionId');
+    await collections.transactions().insertOne({
+      id: releaseTxId,
+      bookingId,
+      type: 'escrow_release',
+      amount: artisanPayout,
+      toUserId: booking.artisanUserId,
+      status: 'completed',
+      metadata: { grossAmount: escrowAmount, commission, netPayout: artisanPayout },
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // 4. Credit artisan wallet
+    await collections.users().updateOne(
+      { id: booking.artisanUserId },
+      { $inc: { walletBalance: artisanPayout } }
+    );
+
+    // 5. Deduct from customer escrowAmount
+    await collections.users().updateOne(
+      { id: booking.customerId },
+      { $inc: { escrowAmount: -escrowAmount } }
+    );
+
+    // 6. Update booking to released/completed
+    await collections.bookings().updateOne(
+      { id: bookingId },
+      {
+        $set: {
+          status: 'released',
+          artisanPayout,
+          platformCommission: commission,
+          releasedAt: now,
+          completedAt: now,
+          updatedAt: now,
+        },
+      }
+    );
+
+    // 7. Notifications
+    const io = (req.app as any).io;
+    await notifyUser(
+      booking.artisanUserId,
+      '💵 Payment Released!',
+      `₦${artisanPayout.toLocaleString()} has been credited to your wallet. Great job!`,
+      'escrow',
+      { bookingId, amount: artisanPayout },
+      io
+    );
+    await notifyUser(
+      booking.customerId,
+      '✅ Payment Complete',
+      `₦${artisanPayout.toLocaleString()} released to the artisan. Thank you for using TrustConnect!`,
+      'escrow',
+      { bookingId },
+      io
+    );
+
+    res.json({
+      success: true,
+      message: 'Funds released successfully',
+      payout: {
+        escrowAmount,
+        commission,
+        commissionRate: '10%',
+        artisanPayout,
+      },
+    });
+  } catch (error) {
+    console.error('Release fund error:', error);
+    res.status(500).json({ error: 'Failed to release funds' });
+  }
+};
+
+/**
+ * POST /api/booking/:id/submit-work-proof
+ * Artisan submits 3 proof photos → status transitions in-progress → job-done
+ * Creates a work_proof chat message so customer sees photos in the chat
+ */
+export const submitWorkProof = async (req: Request, res: Response) => {
+  try {
+    const bookingId = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
+    const { artisanUserId, photos } = req.body;
+
+    if (!artisanUserId) {
+      return res.status(400).json({ error: 'artisanUserId is required' });
+    }
+    if (!photos || !Array.isArray(photos) || photos.length < 3) {
+      return res.status(400).json({ error: 'Exactly 3 or more proof photos are required' });
+    }
+
+    const booking = await collections.bookings().findOne({ id: bookingId });
+    if (!booking) {
+      return res.status(404).json({ error: 'Booking not found' });
+    }
+    if (booking.artisanUserId !== parseInt(artisanUserId)) {
+      return res.status(403).json({ error: 'Only the assigned artisan can submit work proof' });
+    }
+    if (!['in-progress', 'accepted', 'on-the-way'].includes(booking.status)) {
+      return res.status(400).json({
+        error: `Cannot submit proof from status: ${booking.status}. Job must be in-progress.`,
+      });
+    }
+
+    const now = new Date().toISOString();
+
+    // 1. Update booking status to job-done
+    await collections.bookings().updateOne(
+      { id: bookingId },
+      {
+        $set: {
+          status: 'job-done',
+          workProofPhotos: photos.slice(0, 3),
+          workProofSubmittedAt: now,
+          jobDoneAt: now,
+          updatedAt: now,
+        },
+      }
+    );
+
+    // 2. Post a work_proof chat message so proof appears in chat
+    const conversation = await collections.conversations().findOne({
+      $or: [{ bookingId }, { customerId: booking.customerId, artisanUserId: booking.artisanUserId }],
+    });
+
+    if (conversation) {
+      const messageId = await getNextSequence('messageId');
+      const artisanUser = await collections.users().findOne({ id: booking.artisanUserId });
+      const artisanName = artisanUser ? artisanUser.name : 'Artisan';
+
+      await collections.messages().insertOne({
+        id: messageId,
+        conversationId: conversation.id,
+        senderId: booking.artisanUserId,
+        senderRole: 'artisan',
+        type: 'work_proof',
+        content: `${artisanName} has submitted proof of completed work. Please review and release payment.`,
+        workProofPhotos: photos.slice(0, 3),
+        status: 'delivered',
+        createdAt: now,
+      });
+
+      // Update conversation last message
+      await collections.conversations().updateOne(
+        { id: conversation.id },
+        {
+          $set: {
+            lastMessage: '📸 Work proof submitted — review to release payment',
+            lastMessageAt: now,
+            customerUnread: (conversation.customerUnread || 0) + 1,
+            updatedAt: now,
+          },
+        }
+      );
+    }
+
+    // 3. Notify customer
+    const io = (req.app as any).io;
+    await notifyUser(
+      booking.customerId,
+      '📸 Work Proof Submitted',
+      'The artisan has submitted 3 photos of completed work. Please review and release payment or raise a dispute.',
+      'booking',
+      { bookingId },
+      io
+    );
+
+    res.json({
+      success: true,
+      message: 'Work proof submitted. Job marked as done.',
+      bookingStatus: 'job-done',
+    });
+  } catch (error) {
+    console.error('Submit work proof error:', error);
+    res.status(500).json({ error: 'Failed to submit work proof' });
   }
 };

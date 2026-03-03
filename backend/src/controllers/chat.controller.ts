@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { collections, getNextSequence, ChatConversation, ChatMessage } from '../database/connection';
+import { normalizeImageUrl } from '../utils/imageUrl';
 
 /**
  * Chat Controller - Real-Time Negotiation System
@@ -13,18 +14,59 @@ export const getOrCreateConversation = async (req: Request, res: Response) => {
   try {
     const { customerId, artisanUserId, bookingId } = req.body;
 
-    if (!customerId || !artisanUserId) {
-      return res.status(400).json({ error: 'customerId and artisanUserId are required' });
+    if (!customerId) {
+      return res.status(400).json({ error: 'customerId is required' });
     }
 
     const custId = parseInt(customerId);
-    const artId = parseInt(artisanUserId);
+    let artId = parseInt(artisanUserId || '0');
 
-    // Check if conversation already exists
-    let conversation = await collections.conversations().findOne({
+    // === BOOKING GATE ===
+    // If bookingId is provided, use it to authorize and resolve the artisan.
+    // Otherwise, find any booking between this customer and artisan.
+    let authBooking: any = null;
+
+    if (bookingId) {
+      authBooking = await collections.bookings().findOne({
+        id: parseInt(bookingId),
+        customerId: custId,
+      });
+      // Derive artId from booking if artId is missing/0
+      if (authBooking && (!artId || artId === 0)) {
+        artId = authBooking.artisanUserId;
+      }
+    }
+
+    if (!authBooking && artId > 0) {
+      authBooking = await collections.bookings().findOne({
+        customerId: custId,
+        artisanUserId: artId,
+      });
+    }
+
+    if (!authBooking) {
+      // Last fallback: any booking by this customer (with any artisan — needed when artId is 0)
+      if (artId > 0) {
+        return res.status(403).json({
+          error: 'You must book this artisan before you can message them.',
+          code: 'NO_BOOKING',
+        });
+      }
+      return res.status(400).json({ error: 'customerId and either artisanUserId or bookingId are required' });
+    }
+
+    if (!artId || artId === 0) {
+      return res.status(400).json({ error: 'Could not determine artisan. Please provide artisanUserId.' });
+    }
+
+    // === CONVERSATION LOOKUP ===
+    const existingConversation = await collections.conversations().findOne({
       customerId: custId,
       artisanUserId: artId,
     });
+
+    // Check if conversation already exists
+    let conversation = existingConversation;
 
     if (!conversation) {
       const id = await getNextSequence('conversationId');
@@ -68,9 +110,9 @@ export const getOrCreateConversation = async (req: Request, res: Response) => {
       conversation: {
         ...conversation,
         customerName: customer?.name || 'Customer',
-        customerAvatar: customer?.avatar || null,
+        customerAvatar: normalizeImageUrl(customer?.avatar, req),
         artisanName: artisan?.name || 'Artisan',
-        artisanAvatar: artisanProfile?.profilePhotoUrl || artisan?.avatar || null,
+        artisanAvatar: normalizeImageUrl(artisanProfile?.profilePhotoUrl || artisan?.avatar, req),
         artisanTrade: artisanProfile?.primarySkill || '',
       },
     });
@@ -107,9 +149,9 @@ export const getConversations = async (req: Request, res: Response) => {
         return {
           ...conv,
           customerName: customer?.name || 'Customer',
-          customerAvatar: customer?.avatar || null,
+          customerAvatar: normalizeImageUrl(customer?.avatar, req),
           artisanName: artisan?.name || 'Artisan',
-          artisanAvatar: artisanProfile?.profilePhotoUrl || artisan?.avatar || null,
+          artisanAvatar: normalizeImageUrl(artisanProfile?.profilePhotoUrl || artisan?.avatar, req),
           artisanTrade: artisanProfile?.primarySkill || '',
           unreadCount: userRole === 'artisan' ? conv.artisanUnread : conv.customerUnread,
         };

@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { getDB } from '../../database/connection';
+import { normalizeImageUrl } from '../../utils/imageUrl';
 
 /**
  * Admin Dashboard Controller
@@ -143,7 +144,7 @@ export class AdminDashboardController {
           trade: profile.primarySkill || profile.skillCategory || 'Unspecified',
           idStatus,
           submissionTime: profile.submittedAt || profile.createdAt,
-          profilePicture: profile.profilePhotoUrl || user?.avatar
+          profilePicture: normalizeImageUrl(profile.profilePhotoUrl, req) || normalizeImageUrl(user?.avatar, req)
         };
       }));
 

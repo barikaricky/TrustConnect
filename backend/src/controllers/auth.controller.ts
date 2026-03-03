@@ -27,10 +27,10 @@ export class AuthController {
         });
       }
       
-      if (!['customer', 'artisan'].includes(role)) {
+      if (!['customer', 'artisan', 'company'].includes(role)) {
         return res.status(400).json({
           success: false,
-          message: 'Role must be either customer or artisan',
+          message: 'Role must be customer, artisan, or company',
         });
       }
       
@@ -45,7 +45,7 @@ export class AuthController {
       
       // Hash password if provided
       let hashedPassword;
-      if (password) {
+      if (password) {   
         hashedPassword = await bcrypt.hash(password, 10);
       }
       

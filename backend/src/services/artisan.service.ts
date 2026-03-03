@@ -162,7 +162,7 @@ export class ArtisanService {
       id: historyId,
       artisanProfileId: profile.id,
       previousStatus: profile.verificationStatus,
-      newStatus: newStatus as const,
+      newStatus: newStatus as 'verified' | 'pending',
       changedBy: 'system',
       reason: isAlreadyVerified
         ? 'Artisan re-submitted registration (profile already verified – status preserved)'

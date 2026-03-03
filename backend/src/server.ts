@@ -1,6 +1,7 @@
 import express, { Application } from 'express';
 import cors from 'cors';
 import http from 'http';
+import path from 'path';
 import { config } from './config';
 import routes from './routes';
 import { connectDB, collections } from './database/connection';
@@ -120,11 +121,11 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve uploaded files
-app.use('/uploads', express.static('uploads'));
+// Serve uploaded files – __dirname is backend/src/, so ../uploads → backend/uploads/
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Serve admin panel
-app.use('/admin', express.static('public'));
+app.use('/admin', express.static(path.join(__dirname, '../public')));
 
 // Request logging
 app.use((req, res, next) => {
