@@ -3,6 +3,7 @@ import { AdminAuthController } from '../controllers/admin/auth.controller';
 import { AdminDashboardController } from '../controllers/admin/dashboard.controller';
 import { AdminVerificationController } from '../controllers/admin/verification.controller';
 import { AdminManagementController } from '../controllers/admin/management.controller';
+import { AdminCompanyVerificationController } from '../controllers/admin/companyVerification.controller';
 import { 
   requireAdminAuth, 
   requireSuperAdmin,
@@ -295,6 +296,28 @@ router.post('/broadcast', requireAdminAuth, AdminManagementController.sendBroadc
  * Get broadcast history
  */
 router.get('/broadcasts', requireAdminAuth, AdminManagementController.getBroadcasts);
+
+// ==========================================
+// COMPANY VERIFICATION ROUTES
+// ==========================================
+
+/**
+ * GET /api/admin/companies
+ * List all company profiles (filter by ?status=pending|verified|rejected|suspended)
+ */
+router.get('/companies', requireAdminAuth, AdminCompanyVerificationController.listCompanies);
+
+/**
+ * GET /api/admin/companies/:id
+ * Get single company profile for review
+ */
+router.get('/companies/:id', requireAdminAuth, AdminCompanyVerificationController.getCompany);
+
+/**
+ * PATCH /api/admin/companies/:id/verify
+ * Approve, reject, or suspend a company  { action: 'approve'|'reject'|'suspend', notes?: string }
+ */
+router.patch('/companies/:id/verify', requireAdminAuth, AdminCompanyVerificationController.verifyCompany);
 
 // ==========================================
 // SUPER ADMIN ONLY ROUTES

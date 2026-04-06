@@ -42,10 +42,9 @@ export class AdminManagementController {
       }
       if (search) {
         filter.$or = [
-          { id: { $regex: search as string, $options: 'i' } },
           { reference: { $regex: search as string, $options: 'i' } },
-          { customerId: { $regex: search as string, $options: 'i' } },
-          { artisanId: { $regex: search as string, $options: 'i' } },
+          { paymentRef: { $regex: search as string, $options: 'i' } },
+          { paystackRef: { $regex: search as string, $options: 'i' } },
         ];
       }
 

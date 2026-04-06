@@ -20,7 +20,8 @@ export interface Notification {
     | 'system'
     | 'promotion'
     | 'review'
-    | 'verification';
+    | 'verification'
+    | 'quote';
   data?: Record<string, any>;  // deep-link params, bookingId, etc.
   read: boolean;
   createdAt: string;

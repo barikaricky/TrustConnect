@@ -1,0 +1,195 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 300" width="900" height="300">
+  <defs>
+    <!-- Background gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0d1b2a;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#1a2742;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0d1b2a;stop-opacity:1" />
+    </linearGradient>
+    <!-- Shield gradient -->
+    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4fa3e0;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#2c7be5;stop-opacity:1" />
+    </linearGradient>
+    <!-- Text gradient -->
+    <linearGradient id="textGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:1" />
+      <stop offset="60%" style="stop-color:#a8d4ff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#4fa3e0;stop-opacity:1" />
+    </linearGradient>
+    <!-- Glow filter -->
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <!-- Soft glow for nodes -->
+    <filter id="nodeGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <!-- Clip for text mask reveal -->
+    <clipPath id="textReveal">
+      <rect x="0" y="0" width="0" height="300">
+        <animate attributeName="width" from="0" to="900" dur="1.4s" begin="0.5s" fill="freeze" calcMode="spline" keySplines="0.4 0 0.2 1"/>
+      </rect>
+    </clipPath>
+    <clipPath id="taglineReveal">
+      <rect x="0" y="0" width="0" height="300">
+        <animate attributeName="width" from="0" to="900" dur="1.2s" begin="1.6s" fill="freeze" calcMode="spline" keySplines="0.4 0 0.2 1"/>
+      </rect>
+    </clipPath>
+  </defs>
+
+  <!-- Background -->
+  <rect width="900" height="300" fill="url(#bgGrad)" rx="12"/>
+
+  <!-- Grid dots pattern (subtle) -->
+  <g opacity="0.07">
+    <pattern id="dots" x="0" y="0" width="30" height="30" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.5" fill="#4fa3e0"/>
+    </pattern>
+    <rect width="900" height="300" fill="url(#dots)" rx="12"/>
+  </g>
+
+  <!-- ── Animated network connection lines ── -->
+  <!-- Line 1: left node to center -->
+  <line x1="70" y1="150" x2="400" y2="150" stroke="#4fa3e0" stroke-width="1.5" stroke-dasharray="330" stroke-dashoffset="330" opacity="0.35">
+    <animate attributeName="stroke-dashoffset" from="330" to="0" dur="1s" begin="0.2s" fill="freeze" calcMode="spline" keySplines="0.4 0 0.2 1"/>
+  </line>
+  <!-- Line 2: right node to center -->
+  <line x1="830" y1="150" x2="500" y2="150" stroke="#4fa3e0" stroke-width="1.5" stroke-dasharray="330" stroke-dashoffset="330" opacity="0.35">
+    <animate attributeName="stroke-dashoffset" from="330" to="0" dur="1s" begin="0.3s" fill="freeze" calcMode="spline" keySplines="0.4 0 0.2 1"/>
+  </line>
+  <!-- Line 3: top-left to shield -->
+  <line x1="110" y1="75" x2="190" y2="130" stroke="#2c7be5" stroke-width="1" stroke-dasharray="120" stroke-dashoffset="120" opacity="0.3">
+    <animate attributeName="stroke-dashoffset" from="120" to="0" dur="0.8s" begin="0.5s" fill="freeze"/>
+  </line>
+  <!-- Line 4: bottom-left to shield -->
+  <line x1="120" y1="225" x2="195" y2="170" stroke="#2c7be5" stroke-width="1" stroke-dasharray="110" stroke-dashoffset="110" opacity="0.3">
+    <animate attributeName="stroke-dashoffset" from="110" to="0" dur="0.8s" begin="0.6s" fill="freeze"/>
+  </line>
+  <!-- Line 5: top-right node -->
+  <line x1="790" y1="80" x2="720" y2="130" stroke="#2c7be5" stroke-width="1" stroke-dasharray="110" stroke-dashoffset="110" opacity="0.3">
+    <animate attributeName="stroke-dashoffset" from="110" to="0" dur="0.8s" begin="0.7s" fill="freeze"/>
+  </line>
+  <!-- Line 6: bottom-right node -->
+  <line x1="800" y1="220" x2="725" y2="168" stroke="#2c7be5" stroke-width="1" stroke-dasharray="115" stroke-dashoffset="115" opacity="0.3">
+    <animate attributeName="stroke-dashoffset" from="115" to="0" dur="0.8s" begin="0.8s" fill="freeze"/>
+  </line>
+
+  <!-- ── Network nodes ── -->
+  <!-- Far left node -->
+  <circle cx="70" cy="150" r="6" fill="#4fa3e0" filter="url(#nodeGlow)" opacity="0">
+    <animate attributeName="opacity" from="0" to="1" dur="0.4s" begin="0.2s" fill="freeze"/>
+    <animate attributeName="r" values="6;8;6" dur="3s" begin="1s" repeatCount="indefinite"/>
+  </circle>
+  <!-- Far right node -->
+  <circle cx="830" cy="150" r="6" fill="#4fa3e0" filter="url(#nodeGlow)" opacity="0">
+    <animate attributeName="opacity" from="0" to="1" dur="0.4s" begin="0.3s" fill="freeze"/>
+    <animate attributeName="r" values="6;8;6" dur="3s" begin="1.4s" repeatCount="indefinite"/>
+  </circle>
+  <!-- Top-left secondary node -->
+  <circle cx="110" cy="75" r="4" fill="#2c7be5" opacity="0">
+    <animate attributeName="opacity" from="0" to="0.8" dur="0.4s" begin="0.5s" fill="freeze"/>
+    <animate attributeName="r" values="4;5.5;4" dur="4s" begin="2s" repeatCount="indefinite"/>
+  </circle>
+  <!-- Bottom-left secondary node -->
+  <circle cx="120" cy="225" r="4" fill="#2c7be5" opacity="0">
+    <animate attributeName="opacity" from="0" to="0.8" dur="0.4s" begin="0.6s" fill="freeze"/>
+    <animate attributeName="r" values="4;5.5;4" dur="4s" begin="2.5s" repeatCount="indefinite"/>
+  </circle>
+  <!-- Top-right secondary node -->
+  <circle cx="790" cy="80" r="4" fill="#2c7be5" opacity="0">
+    <animate attributeName="opacity" from="0" to="0.8" dur="0.4s" begin="0.7s" fill="freeze"/>
+    <animate attributeName="r" values="4;5.5;4" dur="4s" begin="3s" repeatCount="indefinite"/>
+  </circle>
+  <!-- Bottom-right secondary node -->
+  <circle cx="800" cy="220" r="4" fill="#2c7be5" opacity="0">
+    <animate attributeName="opacity" from="0" to="0.8" dur="0.4s" begin="0.8s" fill="freeze"/>
+    <animate attributeName="r" values="4;5.5;4" dur="4s" begin="3.5s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- ── Shield icon (center-left of text) ── -->
+  <g transform="translate(220, 100)" opacity="0">
+    <animate attributeName="opacity" from="0" to="1" dur="0.6s" begin="0.3s" fill="freeze"/>
+    <animateTransform attributeName="transform" type="translate" from="220,115" to="220,100" dur="0.6s" begin="0.3s" fill="freeze" calcMode="spline" keySplines="0.4 0 0.2 1"/>
+    <!-- Shield body -->
+    <path d="M50,0 C50,0 85,15 85,45 C85,70 70,88 50,95 C30,88 15,70 15,45 C15,15 50,0 50,0Z"
+          fill="url(#shieldGrad)" filter="url(#glow)" opacity="0.95"/>
+    <!-- Shield inner border -->
+    <path d="M50,8 C50,8 78,20 78,47 C78,67 65,82 50,88 C35,82 22,67 22,47 C22,20 50,8 50,8Z"
+          fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="1.5"/>
+    <!-- Checkmark -->
+    <polyline points="33,48 44,60 67,36" fill="none" stroke="white" stroke-width="5"
+              stroke-linecap="round" stroke-linejoin="round"
+              stroke-dasharray="50" stroke-dashoffset="50">
+      <animate attributeName="stroke-dashoffset" from="50" to="0" dur="0.5s" begin="0.9s" fill="freeze" calcMode="spline" keySplines="0.4 0 0.2 1"/>
+    </polyline>
+  </g>
+
+  <!-- ── Main title text ── -->
+  <g clip-path="url(#textReveal)">
+    <text x="340" y="168"
+          font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
+          font-size="68"
+          font-weight="800"
+          letter-spacing="-1"
+          fill="url(#textGrad)"
+          filter="url(#glow)">TrustConnect</text>
+  </g>
+
+  <!-- ── Tagline ── -->
+  <g clip-path="url(#taglineReveal)">
+    <text x="342" y="198"
+          font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
+          font-size="17"
+          font-weight="400"
+          letter-spacing="3"
+          fill="#7ab8e8"
+          opacity="0.85">CONNECTING TRUST  ·  SECURING WORK</text>
+  </g>
+
+  <!-- ── Animated underline ── -->
+  <line x1="340" y1="210" x2="340" y2="210" stroke="#4fa3e0" stroke-width="2" opacity="0.6">
+    <animate attributeName="x2" from="340" to="755" dur="0.8s" begin="1.8s" fill="freeze" calcMode="spline" keySplines="0.4 0 0.2 1"/>
+  </line>
+
+  <!-- ── Pulse ring on shield ── -->
+  <circle cx="270" cy="150" r="52" fill="none" stroke="#4fa3e0" stroke-width="1.5" opacity="0">
+    <animate attributeName="opacity" values="0;0.4;0" dur="2.5s" begin="1.5s" repeatCount="indefinite"/>
+    <animate attributeName="r" values="52;68;52" dur="2.5s" begin="1.5s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- ── Floating particles ── -->
+  <circle cx="450" cy="40" r="2" fill="#4fa3e0" opacity="0">
+    <animate attributeName="opacity" values="0;0.6;0" dur="3s" begin="2s" repeatCount="indefinite"/>
+    <animateTransform attributeName="transform" type="translate" values="0,0;0,-15;0,0" dur="3s" begin="2s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="600" cy="260" r="2" fill="#2c7be5" opacity="0">
+    <animate attributeName="opacity" values="0;0.5;0" dur="3.5s" begin="2.5s" repeatCount="indefinite"/>
+    <animateTransform attributeName="transform" type="translate" values="0,0;0,-12;0,0" dur="3.5s" begin="2.5s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="380" cy="255" r="1.5" fill="#7ab8e8" opacity="0">
+    <animate attributeName="opacity" values="0;0.5;0" dur="4s" begin="3s" repeatCount="indefinite"/>
+    <animateTransform attributeName="transform" type="translate" values="0,0;5,-10;0,0" dur="4s" begin="3s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="730" cy="35" r="1.5" fill="#4fa3e0" opacity="0">
+    <animate attributeName="opacity" values="0;0.6;0" dur="3.2s" begin="2.2s" repeatCount="indefinite"/>
+    <animateTransform attributeName="transform" type="translate" values="0,0;-5,-10;0,0" dur="3.2s" begin="2.2s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- ── Border frame ── -->
+  <rect width="900" height="300" fill="none" stroke="#2c7be5" stroke-width="1.5" rx="12" opacity="0.4"/>
+
+  <!-- Corner accents -->
+  <polyline points="12,40 12,12 40,12" fill="none" stroke="#4fa3e0" stroke-width="2.5" stroke-linecap="round" opacity="0.7"/>
+  <polyline points="860,12 888,12 888,40" fill="none" stroke="#4fa3e0" stroke-width="2.5" stroke-linecap="round" opacity="0.7"/>
+  <polyline points="12,260 12,288 40,288" fill="none" stroke="#4fa3e0" stroke-width="2.5" stroke-linecap="round" opacity="0.7"/>
+  <polyline points="860,288 888,288 888,260" fill="none" stroke="#4fa3e0" stroke-width="2.5" stroke-linecap="round" opacity="0.7"/>
+</svg>

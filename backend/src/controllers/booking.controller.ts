@@ -58,18 +58,10 @@ export const createBooking = async (req: Request, res: Response) => {
 
     artisanUserId = artisan.userId;
 
-    // ── BALANCE CHECK: customer must have enough funds ──
-    const price = estimatedPrice ? parseFloat(estimatedPrice) : 3000;
-    const customerBalance = customer.walletBalance || 0;
-    if (customerBalance < price) {
-      return res.status(400).json({
-        error: 'Insufficient wallet balance',
-        code: 'INSUFFICIENT_BALANCE',
-        required: price,
-        available: customerBalance,
-        message: `You need ₦${price.toLocaleString()} but only have ₦${customerBalance.toLocaleString()} in your wallet. Please top up before booking.`,
-      });
-    }
+    // ── NO upfront balance check or escrow hold ──
+    // Funds are only locked AFTER the artisan submits a quotation AND the customer accepts it.
+    // The exact payment amount is determined by the artisan's quote, not the estimated price.
+    const price = estimatedPrice ? parseFloat(estimatedPrice) : 0;
 
     const bookingId = await getNextSequence('bookingId');
     const now = new Date().toISOString();
@@ -90,51 +82,13 @@ export const createBooking = async (req: Request, res: Response) => {
         longitude: location.longitude,
       },
       estimatedPrice: price,
-      escrowAmount: price,
+      escrowAmount: 0,           // No funds held at booking creation — set after quote acceptance
       customerNotes: customerNotes || '',
       createdAt: now,
       updatedAt: now,
     };
 
     await collections.bookings().insertOne(booking);
-
-    // ── ESCROW HOLD: deduct from wallet, add to escrow ──
-    await collections.users().updateOne(
-      { id: parseInt(customerId) },
-      {
-        $inc: {
-          walletBalance: -price,
-          escrowAmount: price,
-        },
-      }
-    );
-
-    // Create escrow hold transaction
-    const txId = await getNextSequence('transactionId');
-    await collections.transactions().insertOne({
-      id: txId,
-      bookingId,
-      type: 'escrow_fund',
-      amount: price,
-      fromUserId: parseInt(customerId),
-      toUserId: undefined,
-      paymentRef: `TC-ESC-AUTO-${bookingId}-${Date.now()}`,
-      status: 'held_in_escrow',
-      metadata: {
-        autoHeld: true,
-        artisanUserId,
-        serviceType,
-        description: `Escrow hold for booking #${bookingId}`,
-      },
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    // Update booking with escrow transaction reference
-    await collections.bookings().updateOne(
-      { id: bookingId },
-      { $set: { escrowTransactionId: txId } }
-    );
 
     // Get artisan user details for response
     const artisanUser = await collections.users().findOne({ id: artisanUserId });
@@ -147,7 +101,7 @@ export const createBooking = async (req: Request, res: Response) => {
     await notifyUser(
       artisanUserId,
       '📋 New Job Request!',
-      `${customer.name || 'A customer'} wants to book you for ${serviceType}. ₦${price.toLocaleString()} held in escrow.`,
+      `${customer.name || 'A customer'} wants to book you for ${serviceType}. Accept and submit a quote to proceed.`,
       'booking',
       { bookingId },
       io
@@ -155,7 +109,7 @@ export const createBooking = async (req: Request, res: Response) => {
 
     res.status(201).json({
       success: true,
-      message: 'Booking created successfully',
+      message: 'Booking created successfully. Waiting for artisan to accept and submit a quote.',
       booking: {
         ...booking,
         artisanName: artisanUser?.name || 'Unknown',
@@ -163,7 +117,7 @@ export const createBooking = async (req: Request, res: Response) => {
         artisanTrade: artisan.primarySkill,
         artisanPhoto: normalizeImageUrl(artisan.profilePhotoUrl, req),
         artisanLocation,
-        escrowHeld: price,
+        escrowHeld: 0,
       },
     });
   } catch (error) {
@@ -291,7 +245,10 @@ export const updateBookingStatus = async (req: Request, res: Response) => {
     const bookingId = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
     const { status, artisanNotes, finalPrice } = req.body;
 
-    const validStatuses = ['accepted', 'rejected', 'on-the-way', 'in-progress', 'completed', 'cancelled', 'quoted', 'funded', 'job-done', 'disputed', 'released'];
+    const validStatuses = [
+      'accepted', 'rejected', 'on-the-way', 'in-progress', 'completed',
+      'cancelled', 'quoted', 'negotiating', 'funded', 'job-done', 'disputed', 'released',
+    ];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` });
     }
@@ -299,6 +256,15 @@ export const updateBookingStatus = async (req: Request, res: Response) => {
     const booking = await collections.bookings().findOne({ id: bookingId });
     if (!booking) {
       return res.status(404).json({ error: 'Booking not found' });
+    }
+
+    // ── GUARD: artisan cannot start work (on-the-way / in-progress) unless booking is funded ──
+    if (['on-the-way', 'in-progress'].includes(status) && booking.status !== 'funded' && booking.status !== 'on-the-way') {
+      return res.status(400).json({
+        error: 'Cannot start work until the customer has accepted your quote and locked payment in escrow.',
+        code: 'QUOTE_NOT_ACCEPTED',
+        currentStatus: booking.status,
+      });
     }
 
     const updateFields: any = {
@@ -636,6 +602,183 @@ export const getArtisanDetail = async (req: Request, res: Response) => {
 };
 
 /**
+ * POST /api/booking/:id/submit-quote
+ * Artisan submits a quotation for a specific booking.
+ * - Only allowed when booking.status is 'accepted' or 'negotiating'
+ * - Supersedes any previous unsettled quote on this booking
+ * - Sets booking.status → 'quoted'
+ * - Notifies the customer
+ */
+export const submitBookingQuote = async (req: Request, res: Response) => {
+  try {
+    const bookingId = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
+    const { artisanUserId, amount, workDetails, estimatedDays } = req.body;
+
+    if (!artisanUserId || !amount || !workDetails) {
+      return res.status(400).json({ error: 'artisanUserId, amount, and workDetails are required' });
+    }
+
+    const totalAmount = parseFloat(amount);
+    if (isNaN(totalAmount) || totalAmount <= 0) {
+      return res.status(400).json({ error: 'amount must be a positive number' });
+    }
+
+    const booking = await collections.bookings().findOne({ id: bookingId });
+    if (!booking) return res.status(404).json({ error: 'Booking not found' });
+
+    if (booking.artisanUserId !== parseInt(artisanUserId)) {
+      return res.status(403).json({ error: 'Only the assigned artisan can submit a quote for this booking' });
+    }
+    if (!['accepted', 'negotiating', 'confirmed'].includes(booking.status)) {
+      return res.status(400).json({
+        error: `Cannot submit a quote when booking status is '${booking.status}'. Booking must be accepted first.`,
+        code: 'INVALID_STATUS',
+      });
+    }
+
+    const now = new Date().toISOString();
+
+    // Find or create a conversation for this booking pair
+    const existingConv = await collections.conversations().findOne({
+      $or: [
+        { bookingId },
+        { customerId: booking.customerId, artisanUserId: booking.artisanUserId },
+      ],
+    });
+    let conversationId: number;
+    if (existingConv) {
+      conversationId = existingConv.id;
+    } else {
+      conversationId = await getNextSequence('conversationId');
+      await collections.conversations().insertOne({
+        id: conversationId,
+        customerId: booking.customerId,
+        artisanUserId: booking.artisanUserId,
+        bookingId,
+        lastMessage: '',
+        lastMessageAt: now,
+        customerUnread: 0,
+        artisanUnread: 0,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    // Supersede any previous sent quotes on this booking
+    await collections.quotes().updateMany(
+      { bookingId, status: 'sent' },
+      { $set: { status: 'superseded' as const, updatedAt: now } }
+    );
+
+    // Get revision version
+    const prevQuote = await collections.quotes().findOne(
+      { bookingId, status: 'superseded' },
+      { sort: { createdAt: -1 } }
+    );
+
+    const quoteId = await getNextSequence('quoteId');
+    const quote = {
+      id: quoteId,
+      bookingId,
+      conversationId: conversationId,
+      artisanUserId: booking.artisanUserId,
+      customerId: booking.customerId,
+      workDescription: workDetails,
+      laborCost: totalAmount,
+      materialsCost: 0,
+      totalCost: totalAmount,
+      serviceFee: 0,
+      grandTotal: totalAmount,           // Total client pays = agreed quote amount
+      duration: estimatedDays || 'To be confirmed',
+      status: 'sent' as const,
+      version: prevQuote ? prevQuote.version + 1 : 1,
+      previousQuoteId: prevQuote?.id,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await collections.quotes().insertOne(quote);
+
+    // Update booking: set status → 'quoted', link quoteId
+    await collections.bookings().updateOne(
+      { id: bookingId },
+      { $set: { status: 'quoted' as any, quoteId, quotedAt: now, updatedAt: now } }
+    );
+
+    // Send quote as a chat message
+    const messageId = await getNextSequence('messageId');
+    await collections.messages().insertOne({
+      id: messageId,
+      conversationId: conversationId,
+      senderId: booking.artisanUserId,
+      senderRole: 'artisan' as const,
+      type: 'quote' as const,
+      content: `📋 Quote ${quote.version > 1 ? `(v${quote.version}) ` : ''}submitted: ₦${totalAmount.toLocaleString()} — ${workDetails}`,
+      quoteId,
+      status: 'sent' as const,
+      createdAt: now,
+    });
+    await collections.conversations().updateOne(
+      { id: conversationId },
+      {
+        $set: {
+          lastMessage: `📋 Quote: ₦${totalAmount.toLocaleString()}`,
+          lastMessageAt: now,
+          updatedAt: now,
+        },
+        $inc: { customerUnread: 1 },
+      }
+    );
+
+    // Notify customer
+    const artisanUser = await collections.users().findOne({ id: booking.artisanUserId });
+    const io = (req.app as any).io;
+    await notifyUser(
+      booking.customerId,
+      '📋 Quote Received!',
+      `${artisanUser?.name || 'Your artisan'} quoted ₦${totalAmount.toLocaleString()} for your booking. Tap to review and accept.`,
+      'booking',
+      { bookingId, quoteId },
+      io
+    );
+    if (io) {
+      io.to(`user:${booking.customerId}`).emit('quote_received', { quote, bookingId });
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: 'Quote submitted. Awaiting customer review.',
+      quote,
+      bookingStatus: 'quoted',
+    });
+  } catch (error) {
+    console.error('Submit booking quote error:', error);
+    return res.status(500).json({ error: 'Failed to submit quote' });
+  }
+};
+
+/**
+ * GET /api/booking/:id/quote
+ * Returns the current active (sent) quote for a booking.
+ */
+export const getBookingQuote = async (req: Request, res: Response) => {
+  try {
+    const bookingId = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
+    const booking = await collections.bookings().findOne({ id: bookingId });
+    if (!booking) return res.status(404).json({ error: 'Booking not found' });
+
+    const quote = await collections.quotes().findOne(
+      { bookingId, status: 'sent' },
+      { sort: { createdAt: -1 } }
+    );
+
+    return res.json({ success: true, quote: quote || null });
+  } catch (error) {
+    console.error('Get booking quote error:', error);
+    return res.status(500).json({ error: 'Failed to get booking quote' });
+  }
+};
+
+/**
  * POST /api/booking/:id/release-fund
  * Customer confirms work is done and releases escrow to artisan wallet
  * Commission: 10% deducted, 90% goes to artisan
@@ -852,6 +995,16 @@ export const submitWorkProof = async (req: Request, res: Response) => {
       booking.customerId,
       '📸 Work Proof Submitted',
       'The artisan has submitted 3 photos of completed work. Please review and release payment or raise a dispute.',
+      'booking',
+      { bookingId },
+      io
+    );
+
+    // Also confirm to the artisan that their submission was received
+    await notifyUser(
+      booking.artisanUserId,
+      '✅ Work Proof Sent!',
+      'Your proof photos have been delivered to the client. Payment will be released once they approve.',
       'booking',
       { bookingId },
       io

@@ -31,6 +31,7 @@ interface Summary {
 const TransactionLogs: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<Summary>({
     totalVolume: 0, totalEscrow: 0, totalReleased: 0, totalRefunded: 0, count: 0,
   });
@@ -45,6 +46,7 @@ const TransactionLogs: React.FC = () => {
   const loadTransactions = async () => {
     try {
       setLoading(true);
+      setError(null);
       const params = new URLSearchParams();
       if (filters.type !== 'all') params.append('type', filters.type);
       if (filters.status !== 'all') params.append('status', filters.status);
@@ -59,10 +61,14 @@ const TransactionLogs: React.FC = () => {
       if (response.data.success) {
         setTransactions(response.data.transactions);
         setPagination(response.data.pagination);
-        setSummary(response.data.summary);
+        setSummary(response.data.summary || { totalVolume: 0, totalEscrow: 0, totalReleased: 0, totalRefunded: 0, count: 0 });
+      } else {
+        setError(response.data.message || 'Failed to load transactions');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Load transactions error:', error);
+      const msg = error?.response?.data?.message || error?.message || 'Failed to load transactions. Check your connection.';
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -79,12 +85,12 @@ const TransactionLogs: React.FC = () => {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'held_in_escrow': return 'status-escrow';
-      case 'released': case 'completed': return 'status-released';
-      case 'refunded': return 'status-refunded';
-      case 'pending': return 'status-pending';
-      case 'failed': return 'status-failed';
-      default: return 'status-default';
+      case 'held_in_escrow': return 'status-badge held';
+      case 'released': case 'completed': return 'status-badge completed';
+      case 'refunded': return 'status-badge pending';
+      case 'pending': return 'status-badge pending';
+      case 'failed': return 'status-badge failed';
+      default: return 'status-badge';
     }
   };
 
@@ -138,12 +144,27 @@ const TransactionLogs: React.FC = () => {
       <section className="txn-filters">
         <input
           type="text"
-          placeholder="Search by reference, ID..."
+          placeholder="Search by reference..."
           value={filters.search}
           onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-          className="filter-search"
+          className="filter-input"
         />
         <select
+          title="Filter by type"
+          value={filters.type}
+          onChange={(e) => setFilters({ ...filters, type: e.target.value })}
+          className="filter-select"
+        >
+          <option value="all">All Types</option>
+          <option value="escrow_fund">Escrow Fund</option>
+          <option value="escrow_release">Escrow Release</option>
+          <option value="commission">Commission</option>
+          <option value="withdrawal">Withdrawal</option>
+          <option value="refund">Refund</option>
+          <option value="dispute_split">Dispute Split</option>
+        </select>
+        <select
+          title="Filter by status"
           value={filters.status}
           onChange={(e) => setFilters({ ...filters, status: e.target.value })}
           className="filter-select"
@@ -158,17 +179,17 @@ const TransactionLogs: React.FC = () => {
         </select>
         <input
           type="date"
+          title="Start date"
           value={filters.startDate}
           onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
           className="filter-date"
-          placeholder="Start Date"
         />
         <input
           type="date"
+          title="End date"
           value={filters.endDate}
           onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
           className="filter-date"
-          placeholder="End Date"
         />
       </section>
 
@@ -176,11 +197,16 @@ const TransactionLogs: React.FC = () => {
       <section className="txn-table-wrapper">
         {loading ? (
           <div className="txn-loading">
-            <div className="spinner"></div>
+            <div className="txn-spinner"></div>
             <p>Loading transactions...</p>
           </div>
+        ) : error ? (
+          <div className="txn-loading">
+            <p className="txn-error-text">⚠️ {error}</p>
+            <button className="txn-btn" onClick={loadTransactions}>↺ Retry</button>
+          </div>
         ) : transactions.length === 0 ? (
-          <div className="txn-empty">
+          <div className="txn-loading">
             <p>💳 No transactions found</p>
           </div>
         ) : (
@@ -206,13 +232,13 @@ const TransactionLogs: React.FC = () => {
                   <td className="txn-amount">{formatCurrency(txn.amount || 0)}</td>
                   <td className="txn-fee">{formatCurrency(txn.serviceFee || 0)}</td>
                   <td>
-                    <span className={`txn-status ${getStatusColor(txn.status)}`}>
+                  <span className={getStatusColor(txn.status)}>
                       {getStatusLabel(txn.status)}
                     </span>
                   </td>
                   <td className="txn-date">{formatDate(txn.createdAt)}</td>
                   <td>
-                    <button className="view-btn" onClick={(e) => { e.stopPropagation(); setSelectedTxn(txn); }}>
+                    <button className="txn-btn" onClick={(e) => { e.stopPropagation(); setSelectedTxn(txn); }}>
                       View
                     </button>
                   </td>
@@ -225,15 +251,17 @@ const TransactionLogs: React.FC = () => {
 
       {/* Pagination */}
       {pagination.pages > 1 && (
-        <section className="txn-pagination">
+        <section className="pagination">
           <button
+            className="page-btn"
             disabled={pagination.page <= 1}
             onClick={() => setPagination({ ...pagination, page: pagination.page - 1 })}
           >
             ← Previous
           </button>
-          <span>Page {pagination.page} of {pagination.pages} ({pagination.total} total)</span>
+          <span className="page-btn active">{pagination.page} / {pagination.pages}</span>
           <button
+            className="page-btn"
             disabled={pagination.page >= pagination.pages}
             onClick={() => setPagination({ ...pagination, page: pagination.page + 1 })}
           >
@@ -244,53 +272,53 @@ const TransactionLogs: React.FC = () => {
 
       {/* Detail Modal */}
       {selectedTxn && (
-        <div className="txn-modal-overlay" onClick={() => setSelectedTxn(null)}>
-          <div className="txn-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="txn-modal-header">
-              <h2>Transaction Details</h2>
+        <div className="txn-detail-overlay" onClick={() => setSelectedTxn(null)}>
+          <div className="txn-detail-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Transaction Details</h3>
               <button className="modal-close" onClick={() => setSelectedTxn(null)}>✕</button>
             </div>
-            <div className="txn-modal-body">
+            <div className="modal-body">
               <div className="detail-row">
                 <span className="detail-label">Reference</span>
                 <span className="detail-value">{selectedTxn.reference || selectedTxn.id}</span>
               </div>
               <div className="detail-row">
                 <span className="detail-label">Status</span>
-                <span className={`txn-status ${getStatusColor(selectedTxn.status)}`}>
+                <span className={getStatusColor(selectedTxn.status)}>
                   {getStatusLabel(selectedTxn.status)}
                 </span>
               </div>
               <div className="detail-row">
                 <span className="detail-label">Amount</span>
-                <span className="detail-value amount">{formatCurrency(selectedTxn.amount || 0)}</span>
+                <span className="detail-data">{formatCurrency(selectedTxn.amount || 0)}</span>
               </div>
               <div className="detail-row">
                 <span className="detail-label">Service Fee</span>
-                <span className="detail-value">{formatCurrency(selectedTxn.serviceFee || 0)}</span>
+                <span className="detail-data">{formatCurrency(selectedTxn.serviceFee || 0)}</span>
               </div>
               <div className="detail-row">
                 <span className="detail-label">Customer</span>
-                <span className="detail-value">{selectedTxn.customerName} ({selectedTxn.customerId})</span>
+                <span className="detail-data">{selectedTxn.customerName} ({selectedTxn.customerId})</span>
               </div>
               <div className="detail-row">
                 <span className="detail-label">Artisan</span>
-                <span className="detail-value">{selectedTxn.artisanName} ({selectedTxn.artisanId})</span>
+                <span className="detail-data">{selectedTxn.artisanName} ({selectedTxn.artisanId})</span>
               </div>
               {selectedTxn.quoteId && (
                 <div className="detail-row">
                   <span className="detail-label">Quote ID</span>
-                  <span className="detail-value">{selectedTxn.quoteId}</span>
+                  <span className="detail-data">{selectedTxn.quoteId}</span>
                 </div>
               )}
               <div className="detail-row">
                 <span className="detail-label">Created</span>
-                <span className="detail-value">{formatDate(selectedTxn.createdAt)}</span>
+                <span className="detail-data">{formatDate(selectedTxn.createdAt)}</span>
               </div>
               {selectedTxn.updatedAt && (
                 <div className="detail-row">
                   <span className="detail-label">Updated</span>
-                  <span className="detail-value">{formatDate(selectedTxn.updatedAt)}</span>
+                  <span className="detail-data">{formatDate(selectedTxn.updatedAt)}</span>
                 </div>
               )}
             </div>

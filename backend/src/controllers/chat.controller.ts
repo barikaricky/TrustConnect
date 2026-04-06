@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { collections, getNextSequence, ChatConversation, ChatMessage } from '../database/connection';
 import { normalizeImageUrl } from '../utils/imageUrl';
+import { containsProfanity } from '../utils/profanityFilter';
 
 /**
  * Chat Controller - Real-Time Negotiation System
@@ -176,6 +177,15 @@ export const sendMessage = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'conversationId, senderId, and content are required' });
     }
 
+    // ── Profanity / Conduct Filter ──────────────────────────────────────────
+    if (containsProfanity(content as string)) {
+      return res.status(400).json({
+        error: 'Message contains inappropriate language. Please keep all communication professional and respectful.',
+        code: 'PROFANITY_DETECTED',
+      });
+    }
+    // ── End Filter ─────────────────────────────────────────────────────────
+
     const convId = parseInt(conversationId);
     const conversation = await collections.conversations().findOne({ id: convId });
     if (!conversation) {
@@ -325,7 +335,7 @@ export const uploadChatImage = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'No image uploaded' });
     }
 
-    const fileUrl = `/uploads/${req.file.filename}`;
+    const fileUrl = `/uploads/chat/${req.file.filename}`;
 
     res.json({
       success: true,

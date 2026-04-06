@@ -297,14 +297,14 @@ export class ArtisanController {
         
         // Calculate distance using Haversine
         let distance = 0;
-        if (custLat && custLon && artisan.location) {
-          const loc = artisan.location as any;
-          if (loc.latitude && loc.longitude) {
+        if (custLat && custLon) {
+          const loc = (artisan.location as any);
+          if (loc?.latitude && loc?.longitude) {
             distance = haversineDistance(custLat, custLon, loc.latitude, loc.longitude);
+          } else {
+            // Artisan has no GPS coordinates — put them outside any radius filter
+            distance = 9999;
           }
-        } else if (custLat && custLon) {
-          // Assign semi-random distance for artisans without coords (within radius)
-          distance = Math.round((Math.random() * maxRadius * 0.8 + 0.5) * 10) / 10;
         }
         
         // Get real reviews
@@ -341,9 +341,10 @@ export class ArtisanController {
       
       let results = await Promise.all(enrichedPromises);
       
-      // Filter by radius if coordinates provided
+      // Filter by radius if coordinates provided; fall back to all workers if none found within radius
       if (custLat && custLon) {
-        results = results.filter(a => a.distance <= maxRadius);
+        const withinRadius = results.filter(a => a.distance <= maxRadius);
+        results = withinRadius.length > 0 ? withinRadius : results;
       }
       
       // Sort by rating (desc), then distance (asc)
@@ -464,13 +465,14 @@ export class ArtisanController {
         const user = await collections.users().findOne({ id: artisan.userId });
         
         let distance = 0;
-        if (custLat && custLon && artisan.location) {
-          const loc = artisan.location as any;
-          if (loc.latitude && loc.longitude) {
+        if (custLat && custLon) {
+          const loc = (artisan.location as any);
+          if (loc?.latitude && loc?.longitude) {
             distance = haversineDistance(custLat, custLon, loc.latitude, loc.longitude);
+          } else {
+            // Artisan has no GPS coordinates — put them outside any radius filter
+            distance = 9999;
           }
-        } else if (custLat && custLon) {
-          distance = Math.round((Math.random() * maxRadius * 0.8 + 0.5) * 10) / 10;
         }
         
         const reviews = await collections.reviews()
@@ -519,9 +521,10 @@ export class ArtisanController {
       
       let results = await Promise.all(enrichedPromises);
       
-      // Filter 2: Proximity
+      // Filter 2: Proximity; fall back to all workers if none found within radius
       if (custLat && custLon) {
-        results = results.filter(a => a.distance <= maxRadius);
+        const withinRadius = results.filter(a => a.distance <= maxRadius);
+        results = withinRadius.length > 0 ? withinRadius : results;
       }
       
       // Sort by relevance, then rating, then distance

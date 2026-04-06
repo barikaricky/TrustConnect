@@ -6,6 +6,7 @@
   padding: 2rem;
   position: relative;
   overflow: hidden;
+  background: linear-gradient(160deg, #06091a 0%, #0d1422 40%, #0a0f1f 70%, #111827 100%);
 }
 
 /* Animated Grid Background */
@@ -16,11 +17,19 @@
   right: 0;
   bottom: 0;
   background-image: 
-    linear-gradient(to right, rgba(51, 65, 85, 0.1) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(51, 65, 85, 0.1) 1px, transparent 1px);
-  background-size: 40px 40px;
-  animation: gridMove 20s linear infinite;
-  opacity: 0.5;
+    linear-gradient(to right, rgba(255, 193, 7, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 193, 7, 0.04) 1px, transparent 1px);
+  background-size: 44px 44px;
+  animation: gridMove 24s linear infinite;
+  opacity: 0.7;
+}
+
+.grid-background::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 70% 60% at 50% 40%, rgba(26, 35, 126, 0.18) 0%, transparent 65%);
+  pointer-events: none;
 }
 
 @keyframes gridMove {
@@ -56,38 +65,47 @@
 .shield-icon {
   width: 56px;
   height: 56px;
-  background: linear-gradient(135deg, var(--accent-primary), var(--accent-hover));
+  background: linear-gradient(135deg, #1a237e, #3949ab);
   border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
-  box-shadow: 0 4px 12px rgba(30, 58, 138, 0.4);
+  color: var(--accent-gold);
+  box-shadow: 0 4px 20px rgba(26, 35, 126, 0.55),
+              0 0 0 1px rgba(255, 193, 7, 0.2),
+              0 0 14px rgba(255, 193, 7, 0.12);
 }
 
 .logo-title {
   font-size: 2rem;
   font-weight: 700;
-  color: var(--text-primary);
+  background: linear-gradient(135deg, #ffffff 30%, var(--accent-gold) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
   line-height: 1.2;
 }
 
 .logo-subtitle {
-  font-size: 0.875rem;
-  color: var(--text-secondary);
-  font-weight: 500;
+  font-size: 0.8125rem;
+  color: var(--accent-gold);
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.12em;
+  opacity: 0.85;
 }
 
 /* Login Card */
 .login-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
+  background: linear-gradient(160deg, rgba(17, 24, 39, 0.95) 0%, rgba(13, 20, 34, 0.98) 100%);
+  border: 1px solid rgba(255, 193, 7, 0.12);
+  border-top: 2px solid rgba(255, 193, 7, 0.35);
   border-radius: 16px;
   padding: 2.5rem;
-  box-shadow: var(--shadow-xl);
-  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5),
+              0 0 0 1px rgba(255, 255, 255, 0.03),
+              0 -1px 0 0 rgba(255, 193, 7, 0.1) inset;
+  backdrop-filter: blur(12px);
 }
 
 .card-header {
@@ -177,9 +195,10 @@
 
 .input-wrapper input:focus {
   outline: none;
-  border-color: var(--accent-primary);
-  background: var(--bg-secondary);
-  box-shadow: 0 0 0 3px rgba(30, 58, 138, 0.1);
+  border-color: rgba(255, 193, 7, 0.55);
+  background: rgba(17, 24, 39, 0.9);
+  box-shadow: 0 0 0 3px rgba(255, 193, 7, 0.08),
+              0 0 12px rgba(255, 193, 7, 0.06);
 }
 
 .toggle-password {
@@ -273,13 +292,13 @@
 }
 
 .checkbox-label input[type="checkbox"]:checked + .checkbox-custom {
-  background: var(--accent-primary);
-  border-color: var(--accent-primary);
+  background: linear-gradient(135deg, var(--accent-gold-dark), var(--accent-gold));
+  border-color: var(--accent-gold);
 }
 
 .checkbox-label input[type="checkbox"]:checked + .checkbox-custom::after {
   content: '✓';
-  color: white;
+  color: #0d1422;
   font-size: 0.875rem;
   font-weight: bold;
 }
@@ -288,33 +307,36 @@
 .submit-button {
   width: 100%;
   padding: 1rem;
-  background: var(--accent-primary);
-  color: white;
+  background: linear-gradient(135deg, var(--accent-gold-dark), var(--accent-gold));
+  color: #0d1422;
   border: none;
   border-radius: 8px;
   font-size: 1rem;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.25s ease;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
   margin-top: 0.5rem;
+  box-shadow: 0 4px 16px rgba(255, 193, 7, 0.25);
+  letter-spacing: 0.02em;
 }
 
 .submit-button:hover:not(:disabled) {
-  background: var(--accent-hover);
+  background: linear-gradient(135deg, var(--accent-gold), #ffe57f);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(30, 58, 138, 0.3);
+  box-shadow: 0 6px 24px rgba(255, 193, 7, 0.35);
 }
 
 .submit-button:active:not(:disabled) {
   transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(255, 193, 7, 0.2);
 }
 
 .submit-button:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
@@ -363,7 +385,7 @@
 .card-footer {
   margin-top: 1.5rem;
   padding-top: 1.5rem;
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid rgba(255, 193, 7, 0.1);
   text-align: center;
 }
 
@@ -373,14 +395,14 @@
 }
 
 .forgot-password a {
-  color: var(--accent-primary);
+  color: var(--accent-gold);
   text-decoration: none;
   font-weight: 600;
   transition: color 0.2s ease;
 }
 
 .forgot-password a:hover {
-  color: var(--accent-hover);
+  color: var(--accent-gold-light, #ffe57f);
   text-decoration: underline;
 }
 

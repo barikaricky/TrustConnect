@@ -208,6 +208,25 @@ export class ArtisanService {
 
     await collections.verificationHistory().insertOne(history);
 
+    // Save bank details as a payment method on the user so settings/payment-methods shows it
+    if (data.bankName && data.accountNumber && data.accountName) {
+      await collections.users().updateOne(
+        { id: data.userId },
+        {
+          $set: {
+            paymentMethods: [{
+              id: Date.now().toString(),
+              type: 'bank',
+              bankName: data.bankName,
+              accountNumber: data.accountNumber,
+              accountName: data.accountName,
+              isDefault: true,
+            }],
+          },
+        }
+      );
+    }
+
     return (await collections.artisanProfiles().findOne({ id: profile.id }))!;
   }
 }

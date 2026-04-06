@@ -29,6 +29,42 @@ export interface User {
   totalReviews?: number;
   trustBadge?: string;
   ratingUpdatedAt?: string;
+  // Settings fields
+  emergencyContacts?: Array<{
+    id: string;
+    name: string;
+    phone: string;
+    relationship: string;
+  }>;
+  savedAddresses?: Array<{
+    id: string;
+    label: string;
+    address: string;
+    isDefault: boolean;
+  }>;
+  notificationPreferences?: {
+    pushEnabled: boolean;
+    bookingUpdates: boolean;
+    promotions: boolean;
+    chatMessages: boolean;
+    paymentAlerts: boolean;
+    securityAlerts: boolean;
+    weeklyReport: boolean;
+  };
+  paymentMethods?: Array<{
+    id: string;
+    type: string;
+    bankName: string;
+    accountNumber: string;
+    accountName: string;
+    isDefault: boolean;
+  }>;
+  deleted?: boolean;
+  deletedAt?: string;
+  // Referral system
+  referralCode?: string;        // e.g. "TC-ABC123", unique per user
+  referredBy?: number;          // userId of the person who referred them
+  referralRewardClaimed?: boolean; // true after first job 10% bonus applied
   createdAt: string;
   updatedAt: string;
 }
@@ -131,7 +167,26 @@ export interface Booking {
   artisanUserId: number;    // user id of the artisan
   serviceType: string;      // e.g., 'Plumbing', 'Electrician'
   description: string;
-  status: 'pending' | 'accepted' | 'rejected' | 'on-the-way' | 'in-progress' | 'completed' | 'cancelled' | 'quoted' | 'funded' | 'job-done' | 'disputed' | 'released';
+  /**
+   * Status flow:
+   *   pending → accepted → quoted → (negotiating →) funded → on-the-way → in-progress → job-done → released/disputed
+   *   Any stage before funded: can be cancelled with no escrow refund.
+   *   funded+: cancellation refunds escrow.
+   */
+  status:
+    | 'pending'        // Booking created, artisan notified
+    | 'accepted'       // Artisan accepted, must now submit quote
+    | 'rejected'       // Artisan declined
+    | 'quoted'         // Artisan submitted quote, awaiting customer response
+    | 'negotiating'    // Customer requested revision — artisan must resubmit quote
+    | 'funded'         // Customer accepted quote, escrow locked — artisan may start work
+    | 'on-the-way'     // Artisan en route
+    | 'in-progress'    // Active work
+    | 'job-done'       // Artisan marked work complete, awaiting customer approval
+    | 'completed'      // Customer confirmed completion (alias handled by releaseFund → released)
+    | 'cancelled'      // Booking cancelled
+    | 'disputed'       // Dispute raised; funds remain locked
+    | 'released';      // Funds released to artisan
   scheduledDate: string;
   scheduledTime: string;
   location: {
@@ -145,15 +200,24 @@ export interface Booking {
   artisanNotes?: string;
   rating?: number;
   review?: string;
-  // Escrow fields
-  quoteId?: number;
+  // Quote & Escrow fields
+  quoteId?: number;               // ID of the accepted quote
   escrowTransactionId?: number;
-  escrowAmount?: number;           // Amount held in escrow (grandTotal)
-  artisanPayout?: number;          // Amount artisan receives (totalCost - 10% commission)
-  platformCommission?: number;     // 10% of totalCost
+  escrowAmount?: number;          // Amount locked in escrow (set when quote is accepted)
+  artisanPayout?: number;
+  platformCommission?: number;
+  // Milestone tracking
+  milestones?: Milestone[];
+  currentMilestone?: number;      // Index of the active milestone
+  // Auto-release timer
+  autoReleaseAt?: string;         // ISO date — 7 days after job-done if client silent
+  // Timestamps
+  quotedAt?: string;              // When artisan submitted quote
+  negotiatingAt?: string;         // When customer requested revision
+  fundedAt?: string;              // When customer accepted quote & funds locked
   jobDoneAt?: string;
   releasedAt?: string;
-  workProofPhotos?: string[];  // 3 photos artisan uploads as proof of completion
+  workProofPhotos?: string[];
   workProofSubmittedAt?: string;
   createdAt: string;
   updatedAt: string;
@@ -191,17 +255,28 @@ export interface ChatMessage {
   id: number;
   conversationId: number;
   senderId: number;
-  senderRole: 'customer' | 'artisan' | 'system';
-  type: 'text' | 'image' | 'system' | 'quote' | 'work_proof';
+  senderRole: 'customer' | 'artisan' | 'system' | 'ai';
+  type: 'text' | 'image' | 'system' | 'quote' | 'work_proof' | 'escrow_status' | 'milestone' | 'ai_voice_note';
   content: string;
   imageUrl?: string;
+  audioUrl?: string; // Voice note audio file (AI-generated TTS)
   quoteId?: number; // Reference to quote when type === 'quote'
   workProofPhotos?: string[]; // 3 proof photos when type === 'work_proof'
+  milestoneIndex?: number; // For milestone messages
   status: 'sent' | 'delivered' | 'read';
   createdAt: string;
 }
 
 // ─── Module 4: Digital Quotation & Escrow ─────────────────────────
+
+export interface Milestone {
+  index: number;          // 0, 1, 2
+  label: string;          // e.g. "Upfront", "Midpoint", "Final"
+  percent: number;        // e.g. 30, 40, 30
+  amount: number;         // Calculated from grandTotal
+  status: 'pending' | 'funded' | 'released' | 'disputed';
+  releasedAt?: string;
+}
 
 export interface Quote {
   _id?: ObjectId;
@@ -220,6 +295,11 @@ export interface Quote {
   status: 'sent' | 'accepted' | 'rejected' | 'expired' | 'superseded';
   version: number;          // For quote revisions
   previousQuoteId?: number; // Links to previous version
+  // Milestone support (optional – if absent, single-payment mode)
+  milestones?: Milestone[];
+  // PDF quote document
+  pdfUrl?: string;          // URL to generated PDF
+  securityHash?: string;    // SHA-256 of PDF content for tamper proof
   acceptedAt?: string;
   rejectedAt?: string;
   createdAt: string;
@@ -334,6 +414,7 @@ export async function connectDB(): Promise<Db> {
       { id: 'disputeId', collection: 'disputes' },
       { id: 'notificationId', collection: 'notifications' },
       { id: 'companyProfileId', collection: 'companyProfiles' },
+      { id: 'jobPostId', collection: 'jobPosts' },
     ];
     
     for (const cfg of counterConfigs) {

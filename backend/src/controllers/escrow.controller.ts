@@ -1,7 +1,16 @@
 import { Request, Response } from 'express';
 import crypto from 'crypto';
+import path from 'path';
+import fs from 'fs';
 import { getNextSequence, collections, Transaction } from '../database/connection';
 import { notifyUser } from './notification.controller';
+import {
+  transitionToJobDone,
+  releaseFunds,
+  requestRevision,
+  processAutoReleases,
+} from '../services/escrowStateMachine';
+import { generateDisputeSummary } from '../services/aiModeratorService';
 
 /**
  * Escrow Controller
@@ -421,73 +430,29 @@ async function processSuccessfulPayment(transactionId: number, req: Request) {
 /**
  * POST /api/escrow/job-done
  * Artisan marks job as done → awaits customer approval
+ * Delegates to state machine for auto-release timer & work proof handling
  */
 export async function markJobDone(req: Request, res: Response) {
   try {
-    const { bookingId, artisanUserId } = req.body;
+    const { bookingId, artisanUserId, workProofPhotos } = req.body;
 
     if (!bookingId || !artisanUserId) {
       return res.status(400).json({ success: false, message: 'bookingId and artisanUserId required' });
     }
 
-    const booking = await collections.bookings().findOne({ id: Number(bookingId) });
-    if (!booking) {
-      return res.status(404).json({ success: false, message: 'Booking not found' });
-    }
-    if (booking.artisanUserId !== Number(artisanUserId)) {
-      return res.status(403).json({ success: false, message: 'Only the assigned artisan can mark job as done' });
-    }
-    if (!['funded', 'in-progress'].includes(booking.status)) {
-      return res.status(400).json({ success: false, message: `Cannot mark as done from status: ${booking.status}` });
-    }
-
-    const now = new Date().toISOString();
-
-    await collections.bookings().updateOne(
-      { id: Number(bookingId) },
-      { $set: { status: 'job-done' as any, jobDoneAt: now, updatedAt: now } }
+    const io = (req.app as any).io;
+    const result = await transitionToJobDone(
+      Number(bookingId),
+      Number(artisanUserId),
+      workProofPhotos || [],
+      io
     );
 
-    // System message in conversation
-    const conversation = await collections.conversations().findOne({
-      $or: [
-        { customerId: booking.customerId, artisanUserId: booking.artisanUserId },
-        { artisanUserId: booking.artisanUserId, customerId: booking.customerId },
-      ],
-    });
-
-    if (conversation) {
-      const msgId = await getNextSequence('messageId');
-      const systemMsg = {
-        id: msgId,
-        conversationId: conversation.id,
-        senderId: 0,
-        senderRole: 'system' as const,
-        type: 'system' as const,
-        content: '🔧 Artisan has marked the job as completed. Please confirm to release payment.',
-        status: 'sent' as const,
-        createdAt: now,
-      };
-      await collections.messages().insertOne(systemMsg);
-
-      const io = (req.app as any).io;
-      if (io) {
-        io.to(`conversation:${conversation.id}`).emit('new_message', systemMsg);
-        io.to(`user:${booking.customerId}`).emit('job_done', { bookingId: booking.id });
-      }
-
-      // Push notification to customer
-      await notifyUser(
-        booking.customerId,
-        '🔧 Job Completed!',
-        'The artisan has finished working. Please review the work and release payment.',
-        'booking',
-        { bookingId: booking.id },
-        io
-      );
+    if (!result.success) {
+      return res.status(400).json(result);
     }
 
-    return res.json({ success: true, message: 'Job marked as done. Awaiting customer confirmation.' });
+    return res.json(result);
   } catch (error) {
     console.error('Mark job done error:', error);
     return res.status(500).json({ success: false, message: 'Failed to mark job as done' });
@@ -497,179 +462,120 @@ export async function markJobDone(req: Request, res: Response) {
 /**
  * POST /api/escrow/confirm-release
  * Customer confirms job completion → releases escrow funds to artisan
- * Commission: 10% of totalCost (NOT grandTotal — service fee is platform's)
+ * Delegates to state machine for commission, referral, milestone handling
  */
 export async function confirmAndRelease(req: Request, res: Response) {
   try {
-    const { bookingId, customerId } = req.body;
+    const { bookingId, customerId, milestoneIndex } = req.body;
 
     if (!bookingId || !customerId) {
       return res.status(400).json({ success: false, message: 'bookingId and customerId required' });
     }
 
-    const booking = await collections.bookings().findOne({ id: Number(bookingId) });
-    if (!booking) {
-      return res.status(404).json({ success: false, message: 'Booking not found' });
-    }
-    if (booking.customerId !== Number(customerId)) {
-      return res.status(403).json({ success: false, message: 'Only the customer can release funds' });
-    }
-    if (booking.status !== 'job-done') {
-      return res.status(400).json({ success: false, message: `Cannot release from status: ${booking.status}` });
-    }
-
-    // Get the quote for commission calculation
-    const quote = booking.quoteId
-      ? await collections.quotes().findOne({ id: booking.quoteId })
-      : null;
-
-    if (!quote) {
-      return res.status(400).json({ success: false, message: 'Quote not found for this booking' });
-    }
-
-    const now = new Date().toISOString();
-    const commission = Math.round(quote.totalCost * PLATFORM_COMMISSION_PERCENT);
-    const artisanPayout = quote.totalCost - commission;
-
-    // 1. Update escrow transaction to released
-    if (booking.escrowTransactionId) {
-      await collections.transactions().updateOne(
-        { id: booking.escrowTransactionId },
-        { $set: { status: 'released' as const, updatedAt: now } }
-      );
-    }
-
-    // 2. Create commission transaction
-    const commTxId = await getNextSequence('transactionId');
-    await collections.transactions().insertOne({
-      id: commTxId,
-      bookingId: booking.id,
-      quoteId: quote.id,
-      type: 'commission',
-      amount: commission,
-      fromUserId: booking.artisanUserId,
-      status: 'completed',
-      metadata: {
-        totalCost: quote.totalCost,
-        commissionRate: PLATFORM_COMMISSION_PERCENT,
-        serviceFee: quote.serviceFee,
-      },
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    // 3. Create release transaction (artisan payout)
-    const releaseTxId = await getNextSequence('transactionId');
-    await collections.transactions().insertOne({
-      id: releaseTxId,
-      bookingId: booking.id,
-      quoteId: quote.id,
-      type: 'escrow_release',
-      amount: artisanPayout,
-      toUserId: booking.artisanUserId,
-      status: 'completed',
-      metadata: {
-        grossAmount: quote.totalCost,
-        commission,
-        netPayout: artisanPayout,
-      },
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    // 4. Credit artisan wallet
-    await collections.users().updateOne(
-      { id: booking.artisanUserId },
-      { $inc: { walletBalance: artisanPayout } }
+    const io = (req.app as any).io;
+    const result = await releaseFunds(
+      Number(bookingId),
+      Number(customerId),
+      io,
+      milestoneIndex !== undefined ? Number(milestoneIndex) : undefined
     );
 
-    // 5. Deduct from customer's escrow amount
-    await collections.users().updateOne(
-      { id: booking.customerId },
-      { $inc: { escrowAmount: -(booking.escrowAmount || quote.grandTotal) } }
-    );
-
-    // 6. Update booking
-    await collections.bookings().updateOne(
-      { id: booking.id },
-      {
-        $set: {
-          status: 'released' as any,
-          artisanPayout,
-          platformCommission: commission,
-          finalPrice: quote.totalCost,
-          releasedAt: now,
-          completedAt: now,
-          updatedAt: now,
-        },
-      }
-    );
-
-    // 7. System message & notifications
-    const conversation = await collections.conversations().findOne({
-      $or: [
-        { customerId: booking.customerId, artisanUserId: booking.artisanUserId },
-        { artisanUserId: booking.artisanUserId, customerId: booking.customerId },
-      ],
-    });
-
-    if (conversation) {
-      const msgId = await getNextSequence('messageId');
-      const systemMsg = {
-        id: msgId,
-        conversationId: conversation.id,
-        senderId: 0,
-        senderRole: 'system' as const,
-        type: 'system' as const,
-        content: `✅ Payment released! ₦${artisanPayout.toLocaleString()} has been credited to the artisan's wallet.`,
-        status: 'sent' as const,
-        createdAt: now,
-      };
-      await collections.messages().insertOne(systemMsg);
-
-      const io = (req.app as any).io;
-      if (io) {
-        io.to(`conversation:${conversation.id}`).emit('new_message', systemMsg);
-        io.to(`user:${booking.artisanUserId}`).emit('payment_released', {
-          bookingId: booking.id,
-          amount: artisanPayout,
-        });
-      }
-
-      // Push notifications
-      await notifyUser(
-        booking.artisanUserId,
-        '💵 Payment Released!',
-        `₦${artisanPayout.toLocaleString()} has been credited to your wallet. Great job!`,
-        'escrow',
-        { bookingId: booking.id, amount: artisanPayout },
-        io
-      );
-      await notifyUser(
-        booking.customerId,
-        '✅ Payment Complete',
-        `₦${artisanPayout.toLocaleString()} released to the artisan. Thank you for using TrustConnect!`,
-        'escrow',
-        { bookingId: booking.id },
-        io
-      );
+    if (!result.success) {
+      return res.status(400).json(result);
     }
 
-    return res.json({
-      success: true,
-      message: 'Funds released successfully',
-      payout: {
-        totalCost: quote.totalCost,
-        serviceFee: quote.serviceFee,
-        grandTotal: quote.grandTotal,
-        commission,
-        commissionRate: '10%',
-        artisanPayout,
-      },
-    });
+    return res.json(result);
   } catch (error) {
     console.error('Confirm and release error:', error);
     return res.status(500).json({ success: false, message: 'Failed to release funds' });
+  }
+}
+
+/**
+ * POST /api/escrow/revision
+ * Customer requests artisan to fix issues before releasing payment
+ */
+export async function handleRequestRevision(req: Request, res: Response) {
+  try {
+    const { bookingId, customerId, reason } = req.body;
+
+    if (!bookingId || !customerId || !reason) {
+      return res.status(400).json({ success: false, message: 'bookingId, customerId, and reason required' });
+    }
+
+    const io = (req.app as any).io;
+    const result = await requestRevision(Number(bookingId), Number(customerId), reason, io);
+
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    return res.json(result);
+  } catch (error) {
+    console.error('Request revision error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to request revision' });
+  }
+}
+
+/**
+ * POST /api/escrow/milestone-release
+ * Customer releases a specific milestone payment
+ */
+export async function handleMilestoneRelease(req: Request, res: Response) {
+  try {
+    const { bookingId, customerId, milestoneIndex } = req.body;
+
+    if (!bookingId || !customerId || milestoneIndex === undefined) {
+      return res.status(400).json({ success: false, message: 'bookingId, customerId, and milestoneIndex required' });
+    }
+
+    const io = (req.app as any).io;
+    const result = await releaseFunds(Number(bookingId), Number(customerId), io, Number(milestoneIndex));
+
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    return res.json(result);
+  } catch (error) {
+    console.error('Milestone release error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to release milestone' });
+  }
+}
+
+/**
+ * GET /api/escrow/quote-pdf/:quoteId
+ * Download the generated PDF for a quote
+ */
+export async function downloadQuotePdf(req: Request, res: Response) {
+  try {
+    const quoteId = parseInt(Array.isArray(req.params.quoteId) ? req.params.quoteId[0] : req.params.quoteId);
+    const quote = await collections.quotes().findOne({ id: quoteId });
+
+    if (!quote) {
+      return res.status(404).json({ success: false, message: 'Quote not found' });
+    }
+    if (!quote.pdfUrl) {
+      return res.status(404).json({ success: false, message: 'PDF not yet generated for this quote' });
+    }
+
+    // Validate security hash when one is stored on the quote
+    const { hash } = req.query;
+    if (quote.securityHash && hash !== quote.securityHash) {
+      return res.status(403).json({ success: false, message: 'Invalid security hash' });
+    }
+
+    const pdfPath = path.join(__dirname, '../../', quote.pdfUrl);
+    if (!fs.existsSync(pdfPath)) {
+      return res.status(404).json({ success: false, message: 'PDF file not found on disk' });
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="quote-QT-${String(quoteId).padStart(6, '0')}.pdf"`);
+    return res.sendFile(pdfPath);
+  } catch (error) {
+    console.error('Download quote PDF error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to download PDF' });
   }
 }
 
@@ -701,12 +607,17 @@ export async function getEscrowStatus(req: Request, res: Response) {
         bookingId,
         status: booking.status,
         escrowAmount: booking.escrowAmount,
+        milestones: booking.milestones || null,
+        currentMilestone: booking.currentMilestone,
+        autoReleaseAt: booking.autoReleaseAt || null,
         quote: quote ? {
           laborCost: quote.laborCost,
           materialsCost: quote.materialsCost,
           totalCost: quote.totalCost,
           serviceFee: quote.serviceFee,
           grandTotal: quote.grandTotal,
+          pdfUrl: quote.pdfUrl,
+          securityHash: quote.securityHash,
         } : null,
         artisanPayout: booking.artisanPayout,
         platformCommission: booking.platformCommission,
@@ -716,5 +627,22 @@ export async function getEscrowStatus(req: Request, res: Response) {
   } catch (error) {
     console.error('Get escrow status error:', error);
     return res.status(500).json({ success: false, message: 'Failed to get escrow status' });
+  }
+}
+
+/**
+ * GET /api/escrow/dispute-summary/:bookingId
+ * AI-generated dispute summary for admin review
+ */
+export async function getDisputeSummary(req: Request, res: Response) {
+  try {
+    const bookingId = parseInt(
+      Array.isArray(req.params.bookingId) ? req.params.bookingId[0] : req.params.bookingId
+    );
+    const summary = await generateDisputeSummary(bookingId);
+    return res.json({ success: true, summary });
+  } catch (error) {
+    console.error('Dispute summary error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to generate dispute summary' });
   }
 }

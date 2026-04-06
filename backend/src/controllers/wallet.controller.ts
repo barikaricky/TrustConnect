@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { getNextSequence, collections } from '../database/connection';
 import axios from 'axios';
+import { checkKycForWithdrawal } from '../services/escrowStateMachine';
 
 /**
  * Wallet Controller
@@ -113,6 +114,12 @@ export async function requestWithdrawal(req: Request, res: Response) {
 
     if (!userId || !amount) {
       return res.status(400).json({ success: false, message: 'userId and amount are required' });
+    }
+
+    // KYC verification guard
+    const kycCheck = await checkKycForWithdrawal(Number(userId));
+    if (!kycCheck.allowed) {
+      return res.status(403).json({ success: false, message: kycCheck.reason, code: 'KYC_REQUIRED' });
     }
 
     const user = await collections.users().findOne({ id: Number(userId) });

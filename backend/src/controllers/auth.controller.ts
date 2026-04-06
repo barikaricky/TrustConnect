@@ -3,6 +3,8 @@ import bcrypt from 'bcrypt';
 import { UserService } from '../services/user.service';
 import { OTPService } from '../services/otp.service';
 import { JWTService } from '../services/jwt.service';
+import { collections } from '../database/connection';
+import { ensureUniqueCode } from './referral.controller';
 
 /**
  * Authentication Controller
@@ -16,7 +18,7 @@ export class AuthController {
    */
   static async register(req: Request, res: Response) {
     try {
-      const { phone, name, fullName, role, password, email, location } = req.body;
+      const { phone, name, fullName, role, password, email, location, referralCode: inviteCode } = req.body;
       const userName = name || fullName; // Accept both 'name' and 'fullName'
       
       // Validate input
@@ -52,6 +54,24 @@ export class AuthController {
       // Create user with password and location
       const user = await UserService.createUser(phone, userName, role, hashedPassword, email, location);
       
+      // Generate a unique referral code for the new user
+      const newUserReferralCode = await ensureUniqueCode();
+      const referralUpdate: Record<string, any> = {
+        referralCode: newUserReferralCode,
+        updatedAt: new Date().toISOString(),
+      };
+
+      // If an invite code was provided, link the referrer
+      if (inviteCode) {
+        const referrer = await collections.users().findOne({ referralCode: inviteCode.toUpperCase() });
+        if (referrer && referrer.id !== user.id) {
+          referralUpdate.referredBy = referrer.id;
+          referralUpdate.referralRewardClaimed = false;
+        }
+      }
+
+      await collections.users().updateOne({ id: user.id }, { $set: referralUpdate });
+      
       // Mark user as verified (skip OTP for password registration)
       await UserService.verifyUser(user.id);
       
@@ -75,6 +95,7 @@ export class AuthController {
             email: email || undefined,
             role: user.role,
             isVerified: true,
+            referralCode: newUserReferralCode,
           },
           userId: user.id,
         },

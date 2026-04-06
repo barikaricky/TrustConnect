@@ -15,11 +15,13 @@ import notificationRoutes from './notification.routes';
 import reviewRoutes from './review.routes';
 import companyRoutes from './company.routes';
 import settingsRoutes from './settings.routes';
+import referralRoutes from './referral.routes';
 
 const router = Router();
 
 // API routes
 router.use('/auth', authRoutes);
+router.use('/referral', referralRoutes);
 router.use('/artisan', artisanRoutes);
 router.use('/customer', customerRoutes);
 router.use('/company', companyRoutes);

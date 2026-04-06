@@ -24,6 +24,11 @@ export function normalizeImageUrl(
     return path;
   }
 
+  // Base64 data URI (uploaded directly from mobile) – return as-is
+  if (path.startsWith('data:image/') || path.startsWith('data:image')) {
+    return path;
+  }
+
   // Local device URI stored from a failed upload fallback – nothing the server can serve
   if (path.startsWith('file://') || path.startsWith('content://')) {
     return null;

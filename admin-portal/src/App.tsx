@@ -10,6 +10,7 @@ import DisputeCenter from './pages/DisputeCenter';
 import TransactionLogs from './pages/TransactionLogs';
 import UserManagement from './pages/UserManagement';
 import BroadcastPage from './pages/BroadcastPage';
+import CompanyVerification from './pages/CompanyVerification';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Layout from './components/Layout';
 import PageLoader from './components/PageLoader';
@@ -107,6 +108,14 @@ function App() {
                 element={
                   <PrivateRouteWithLayout>
                     <BroadcastPage />
+                  </PrivateRouteWithLayout>
+                }
+              />
+              <Route
+                path="/companies"
+                element={
+                  <PrivateRouteWithLayout>
+                    <CompanyVerification />
                   </PrivateRouteWithLayout>
                 }
               />
