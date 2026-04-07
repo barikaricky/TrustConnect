@@ -886,6 +886,7 @@ export default function CompanyDashboardScreen() {
               { icon: 'wallet-outline', label: 'Wallet', color: SUCCESS, bg: SUCCESS_LIGHT, route: '/wallet' },
               { icon: 'account-group-outline', label: 'Workers', color: PURPLE, bg: '#EDE7F6', action: () => setBottomTab('workers') },
               { icon: 'video-plus-outline', label: 'Post Job', color: TEAL, bg: '#E0F2F1', route: '/post-job' },
+              { icon: 'play-circle-outline', label: 'Reels', color: '#E91E63', bg: '#FCE4EC', route: '/reels' },
             ] as any[]).map((a, i) => (
               <Animated.View key={i} entering={ZoomIn.delay(320 + i * 60).springify()}>
                 <Pressable

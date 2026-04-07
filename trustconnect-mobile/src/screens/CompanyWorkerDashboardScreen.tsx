@@ -308,6 +308,16 @@ export default function CompanyWorkerDashboardScreen() {
             </LinearGradient>
             <Text style={styles.quickActionLabel}>Wallet</Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.quickAction}
+            onPress={() => router.push('/reels' as any)}
+          >
+            <LinearGradient colors={['#E91E63', '#C2185B']} style={styles.quickActionIcon}>
+              <MaterialCommunityIcons name="play-circle" size={22} color="#fff" />
+            </LinearGradient>
+            <Text style={styles.quickActionLabel}>Reels</Text>
+          </TouchableOpacity>
         </View>
       </Animated.View>
 

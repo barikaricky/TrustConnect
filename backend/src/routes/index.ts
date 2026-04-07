@@ -16,6 +16,7 @@ import reviewRoutes from './review.routes';
 import companyRoutes from './company.routes';
 import settingsRoutes from './settings.routes';
 import referralRoutes from './referral.routes';
+import reelRoutes from './reel.routes';
 
 const router = Router();
 
@@ -37,6 +38,7 @@ router.use('/payment', paymentRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/reviews', reviewRoutes);
 router.use('/settings', settingsRoutes);
+router.use('/reels', reelRoutes);
 
 // Health check
 router.get('/health', (req, res) => {

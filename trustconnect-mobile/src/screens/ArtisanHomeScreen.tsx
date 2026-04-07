@@ -1344,6 +1344,7 @@ export default function ArtisanHomeScreen() {
                     { icon: 'briefcase-search-outline', label: 'Job Feed',    color: PURPLE,   bg: '#EDE7F6', action: () => router.push('/job-feed' as any) },
                     { icon: 'wallet-outline',         label: 'Wallet',       color: SUCCESS,  bg: '#E8F5E9', action: () => router.push('/wallet') },
                     { icon: 'message-text-outline',   label: 'Messages',     color: INFO,     bg: '#E3F2FD', action: () => router.push('/conversations') },
+                    { icon: 'play-circle-outline',    label: 'Reels',        color: '#E91E63', bg: '#FCE4EC', action: () => router.push('/reels' as any) },
                     { icon: 'alert-decagram-outline', label: 'Disputes',     color: DANGER,   bg: '#FFEBEE', action: () => router.push('/dispute') },
                   ].map((action) => (
                     <Pressable key={action.label} style={styles.quickActionCard} onPress={action.action}>

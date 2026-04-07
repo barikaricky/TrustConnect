@@ -11,6 +11,8 @@ import TransactionLogs from './pages/TransactionLogs';
 import UserManagement from './pages/UserManagement';
 import BroadcastPage from './pages/BroadcastPage';
 import CompanyVerification from './pages/CompanyVerification';
+import JobFeedAdmin from './pages/JobFeedAdmin';
+import ReelsAdmin from './pages/ReelsAdmin';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Layout from './components/Layout';
 import PageLoader from './components/PageLoader';
@@ -116,6 +118,22 @@ function App() {
                 element={
                   <PrivateRouteWithLayout>
                     <CompanyVerification />
+                  </PrivateRouteWithLayout>
+                }
+              />
+              <Route
+                path="/job-feed"
+                element={
+                  <PrivateRouteWithLayout>
+                    <JobFeedAdmin />
+                  </PrivateRouteWithLayout>
+                }
+              />
+              <Route
+                path="/reels"
+                element={
+                  <PrivateRouteWithLayout>
+                    <ReelsAdmin />
                   </PrivateRouteWithLayout>
                 }
               />

@@ -885,6 +885,20 @@ export default function CustomerHomeScreen() {
               <Text style={styles.actionCardTitle}>Messages</Text>
               <Text style={styles.actionCardSub}>Chat & invoices</Text>
             </Pressable>
+
+            <Pressable
+              style={[styles.actionCard, { backgroundColor: '#FCE4EC' }]}
+              onPress={() => router.push('/reels' as any)}
+            >
+              <LinearGradient
+                colors={['#E91E63', '#C2185B']}
+                style={styles.actionCardIcon}
+              >
+                <MaterialCommunityIcons name="play-circle" size={24} color="#fff" />
+              </LinearGradient>
+              <Text style={styles.actionCardTitle}>Reels</Text>
+              <Text style={styles.actionCardSub}>Work videos</Text>
+            </Pressable>
           </Animated.View>
 
           {/* Urgent Help Search Bar */}

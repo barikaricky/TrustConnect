@@ -58,6 +58,7 @@ function AppContent() {
       <Stack.Screen name="post-job" />
       <Stack.Screen name="job-feed" />
       <Stack.Screen name="job-detail" />
+      <Stack.Screen name="reels" />
     </Stack>
   );
 }

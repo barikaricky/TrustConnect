@@ -402,6 +402,9 @@ export async function connectDB(): Promise<Db> {
     await db.collection('disputes').createIndex({ status: 1 });
     await db.collection('companyProfiles').createIndex({ userId: 1 }, { unique: true });
     await db.collection('companyProfiles').createIndex({ rcNumber: 1 }, { sparse: true });
+    await db.collection('reels').createIndex({ userId: 1 });
+    await db.collection('reels').createIndex({ status: 1, createdAt: -1 });
+    await db.collection('reels').createIndex({ category: 1 });
     
     // Initialize counters — sync them with actual collection max IDs
     const counters = db.collection<CounterDocument>('counters');
@@ -420,6 +423,7 @@ export async function connectDB(): Promise<Db> {
       { id: 'notificationId', collection: 'notifications' },
       { id: 'companyProfileId', collection: 'companyProfiles' },
       { id: 'jobPostId', collection: 'jobPosts' },
+      { id: 'reelId', collection: 'reels' },
     ];
     
     for (const cfg of counterConfigs) {
