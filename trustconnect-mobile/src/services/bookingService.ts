@@ -372,3 +372,162 @@ export default {
   negotiateBookingQuote,
   cancelBooking,
 };
+
+// ════════════════════════════════════════════════════════════════
+// VIDEO JOB FLOW
+// ════════════════════════════════════════════════════════════════
+
+export interface AvailableJob {
+  id: number;
+  serviceType: string;
+  description: string;
+  jobVideoUrl: string | null;
+  location: { address: string; latitude?: number; longitude?: number };
+  estimatedPrice: number;
+  scheduledDate: string;
+  scheduledTime: string;
+  customerName: string;
+  customerRating: number | null;
+  customerVerified: boolean;
+  createdAt: string;
+}
+
+export interface AvailableJobsResponse {
+  success: boolean;
+  jobs: AvailableJob[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+/**
+ * Upload a job description video (client)
+ */
+export const uploadJobVideo = async (videoUri: string): Promise<string> => {
+  try {
+    const formData = new FormData();
+    const filename = videoUri.split('/').pop() || 'job-video.mp4';
+    const match = /\.(\w+)$/.exec(filename);
+    const type = match ? `video/${match[1]}` : 'video/mp4';
+
+    formData.append('video', {
+      uri: videoUri,
+      name: filename,
+      type,
+    } as any);
+
+    const response = await axios.post(`${API_BASE_URL}/booking/upload-job-video`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000, // 2 min for large uploads
+    });
+
+    return response.data.videoUrl;
+  } catch (error: any) {
+    console.error('Error uploading job video:', error.message);
+    throw error;
+  }
+};
+
+/**
+ * Upload a completion proof video (worker)
+ */
+export const uploadProofVideo = async (
+  bookingId: number,
+  artisanUserId: number,
+  videoUri: string
+): Promise<{ proofVideoUrl: string; bookingStatus: string; autoReleaseAt: string }> => {
+  try {
+    const formData = new FormData();
+    const filename = videoUri.split('/').pop() || 'proof-video.mp4';
+    const match = /\.(\w+)$/.exec(filename);
+    const type = match ? `video/${match[1]}` : 'video/mp4';
+
+    formData.append('video', {
+      uri: videoUri,
+      name: filename,
+      type,
+    } as any);
+    formData.append('artisanUserId', String(artisanUserId));
+
+    const response = await axios.post(
+      `${API_BASE_URL}/booking/${bookingId}/upload-proof-video`,
+      formData,
+      {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 120000,
+      }
+    );
+
+    return response.data;
+  } catch (error: any) {
+    console.error('Error uploading proof video:', error.message);
+    throw error;
+  }
+};
+
+/**
+ * Get available jobs for workers to browse
+ */
+export const getAvailableJobs = async (params?: {
+  page?: number;
+  limit?: number;
+  trade?: string;
+  minBudget?: number;
+  maxBudget?: number;
+  sortBy?: 'newest' | 'budget-high' | 'budget-low';
+}): Promise<AvailableJobsResponse> => {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/booking/available-jobs`, {
+      params,
+      timeout: 10000,
+    });
+    return response.data;
+  } catch (error: any) {
+    console.error('Error fetching available jobs:', error.message);
+    return { success: false, jobs: [], pagination: { page: 1, limit: 20, total: 0, totalPages: 0 } };
+  }
+};
+
+/**
+ * Get client details after worker picks a job
+ */
+export const getClientDetails = async (
+  bookingId: number,
+  artisanUserId: number
+): Promise<{
+  name: string;
+  phone: string;
+  email: string;
+  address: any;
+  avatar: string | null;
+  isVerified: boolean;
+}> => {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/booking/${bookingId}/client-details`, {
+      params: { artisanUserId },
+      timeout: 10000,
+    });
+    return response.data.client;
+  } catch (error: any) {
+    console.error('Error fetching client details:', error.message);
+    throw error;
+  }
+};
+
+/**
+ * Get a single booking by ID
+ */
+export const getBookingById = async (bookingId: number | string): Promise<any> => {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/booking/${bookingId}`, {
+      timeout: 10000,
+    });
+    return response.data.booking || response.data.data || response.data;
+  } catch (error: any) {
+    console.error('Error fetching booking:', error.message);
+    throw error;
+  }
+};

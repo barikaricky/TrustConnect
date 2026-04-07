@@ -16,7 +16,9 @@ export default function Index() {
       const userData = await AsyncStorage.getItem('@trustconnect_user');
       if (token && userData) {
         const user = JSON.parse(userData);
-        if (user?.role === 'artisan') {
+        if (user?.role === 'artisan' && user?.accountType === 'company') {
+          router.replace('/company-worker-dashboard');
+        } else if (user?.role === 'artisan') {
           router.replace('/artisan-dashboard');
         } else if (user?.role === 'company') {
           router.replace('/company-dashboard');

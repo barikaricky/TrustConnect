@@ -18,7 +18,7 @@ export class AuthController {
    */
   static async register(req: Request, res: Response) {
     try {
-      const { phone, name, fullName, role, password, email, location, referralCode: inviteCode } = req.body;
+      const { phone, name, fullName, role, password, email, location, referralCode: inviteCode, accountType } = req.body;
       const userName = name || fullName; // Accept both 'name' and 'fullName'
       
       // Validate input
@@ -52,7 +52,7 @@ export class AuthController {
       }
       
       // Create user with password and location
-      const user = await UserService.createUser(phone, userName, role, hashedPassword, email, location);
+      const user = await UserService.createUser(phone, userName, role, hashedPassword, email, location, accountType);
       
       // Generate a unique referral code for the new user
       const newUserReferralCode = await ensureUniqueCode();
@@ -94,6 +94,7 @@ export class AuthController {
             name: user.name,
             email: email || undefined,
             role: user.role,
+            accountType: user.accountType || (user.role === 'company' ? 'company' : 'individual'),
             isVerified: true,
             referralCode: newUserReferralCode,
           },
@@ -176,6 +177,7 @@ export class AuthController {
               name: user.name,
               email: user.email,
               role: user.role,
+              accountType: user.accountType || (user.role === 'company' ? 'company' : 'individual'),
               isVerified: user.verified,
             },
           },
@@ -264,6 +266,7 @@ export class AuthController {
             name: user.name,
             email: user.email,
             role: user.role,
+            accountType: user.accountType || (user.role === 'company' ? 'company' : 'individual'),
             isVerified: true,
             verified: true,
           },

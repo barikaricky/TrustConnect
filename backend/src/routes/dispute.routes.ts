@@ -29,15 +29,24 @@ const storage = multer.diskStorage({
     cb(null, `evidence-${uniqueSuffix}${path.extname(file.originalname)}`);
   },
 });
-const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } }); // 5MB max
+const upload = multer({
+  storage,
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB max (supports video evidence)
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|webp|mp4|quicktime|webm/;
+    const mimetype = allowedTypes.test(file.mimetype);
+    if (mimetype) return cb(null, true);
+    cb(new Error('Only image (JPEG, PNG, WebP) and video (MP4, MOV, WebM) files are allowed'));
+  },
+});
 
 const router = Router();
 
 // Raise a new dispute
 router.post('/raise', raiseDispute);
 
-// Upload evidence photo
-router.post('/upload-evidence', upload.single('image'), uploadDisputeEvidence);
+// Upload evidence (photo or video)
+router.post('/upload-evidence', upload.single('evidence'), uploadDisputeEvidence);
 
 // Get a specific dispute
 router.get('/:disputeId', getDispute);

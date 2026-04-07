@@ -25,6 +25,7 @@ function AppContent() {
       <Stack.Screen name="customer-home" />
       <Stack.Screen name="artisan-dashboard" />
       <Stack.Screen name="company-dashboard" />
+      <Stack.Screen name="company-worker-dashboard" />
       <Stack.Screen name="artisan-profile" />
       <Stack.Screen name="customer-profile" />
       <Stack.Screen name="service-search" />
@@ -53,6 +54,9 @@ function AppContent() {
       <Stack.Screen name="customer-wallet" />
       <Stack.Screen name="transaction-history" />
       <Stack.Screen name="refunds" />
+      <Stack.Screen name="post-job" />
+      <Stack.Screen name="job-feed" />
+      <Stack.Screen name="job-detail" />
     </Stack>
   );
 }

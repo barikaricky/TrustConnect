@@ -9,6 +9,7 @@ interface User {
   phone: string;
   email?: string;
   role: 'customer' | 'artisan' | 'company';
+  accountType?: 'individual' | 'company';
 }
 
 interface AuthContextType {

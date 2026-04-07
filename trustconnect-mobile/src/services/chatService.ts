@@ -25,12 +25,14 @@ export interface ChatMessage {
   conversationId: number;
   senderId: number;
   senderRole: 'customer' | 'artisan' | 'system' | 'ai';
-  type: 'text' | 'image' | 'system' | 'quote' | 'work_proof' | 'escrow_status' | 'milestone' | 'ai_voice_note';
+  type: 'text' | 'image' | 'video' | 'system' | 'quote' | 'work_proof' | 'escrow_status' | 'milestone' | 'ai_voice_note' | 'invoice' | 'invoice_revision';
   content: string;
   imageUrl?: string;
+  videoUrl?: string;
   audioUrl?: string;
   quoteId?: number;
   workProofPhotos?: string[]; // 3 proof photos when type === 'work_proof'
+  proofVideoUrl?: string;
   status: 'sent' | 'delivered' | 'read';
   createdAt: string;
   senderName?: string;
@@ -84,7 +86,7 @@ export const sendMessage = async (
   senderId: number,
   senderRole: 'customer' | 'artisan',
   content: string,
-  type: 'text' | 'image' = 'text',
+  type: 'text' | 'image' | 'video' = 'text',
   imageUrl?: string
 ): Promise<ChatMessage> => {
   try {
@@ -213,6 +215,91 @@ export const getBookingForChat = async (
   }
 };
 
+/**
+ * Upload a chat video
+ */
+export const uploadChatVideo = async (videoUri: string): Promise<string> => {
+  try {
+    const formData = new FormData();
+    const filename = videoUri.split('/').pop() || 'chat-video.mp4';
+    const match = /\.(\w+)$/.exec(filename);
+    const type = match ? `video/${match[1]}` : 'video/mp4';
+
+    formData.append('video', {
+      uri: videoUri,
+      name: filename,
+      type,
+    } as any);
+
+    const response = await axios.post(`${API_BASE_URL}/chat/upload-video`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    });
+
+    return response.data.videoUrl;
+  } catch (error: any) {
+    console.error('Upload chat video error:', error.message);
+    throw error;
+  }
+};
+
+/**
+ * Send an invoice in chat (artisan → customer)
+ */
+export interface InvoiceData {
+  description: string;
+  laborCost: number;
+  materialsCost: number;
+  totalCost: number;
+  serviceFee: number;
+  grandTotal: number;
+  duration: string;
+  status: 'pending' | 'accepted' | 'rejected' | 'revision_requested';
+  bookingId?: number;
+  revisionReason?: string;
+}
+
+export const sendInvoice = async (
+  conversationId: number,
+  senderId: number,
+  bookingId: number | string | undefined,
+  data: { description: string; laborCost: number; materialsCost: number; duration: string }
+): Promise<{ message: ChatMessage; invoice: InvoiceData }> => {
+  try {
+    const response = await axios.post(`${API_BASE_URL}/chat/invoice`, {
+      conversationId,
+      senderId,
+      bookingId,
+      ...data,
+    }, { timeout: 10000 });
+    return response.data;
+  } catch (error: any) {
+    console.error('Send invoice error:', error.message);
+    throw error;
+  }
+};
+
+/**
+ * Respond to an invoice (customer accepts / rejects / requests revision)
+ */
+export const respondToInvoice = async (
+  messageId: number,
+  action: 'accepted' | 'rejected' | 'revision_requested',
+  reason?: string
+): Promise<{ invoice: InvoiceData }> => {
+  try {
+    const response = await axios.post(`${API_BASE_URL}/chat/invoice/respond`, {
+      messageId,
+      action,
+      reason,
+    }, { timeout: 10000 });
+    return response.data;
+  } catch (error: any) {
+    console.error('Respond to invoice error:', error.message);
+    throw error;
+  }
+};
+
 export default {
   getOrCreateConversation,
   getConversations,
@@ -220,6 +307,9 @@ export default {
   getMessages,
   markAsRead,
   uploadChatImage,
+  uploadChatVideo,
   submitWorkProof,
   getBookingForChat,
+  sendInvoice,
+  respondToInvoice,
 };

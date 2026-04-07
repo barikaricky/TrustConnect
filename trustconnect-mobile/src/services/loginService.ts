@@ -22,7 +22,8 @@ export interface LoginResponse {
       phone: string;
       fullName: string;
       email?: string;
-      role: 'customer' | 'artisan';
+      role: 'customer' | 'artisan' | 'company';
+      accountType?: 'individual' | 'company';
       isVerified: boolean;
     };
   };

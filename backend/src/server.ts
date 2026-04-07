@@ -7,7 +7,7 @@ import routes from './routes';
 import { connectDB, collections } from './database/connection';
 import { execSync } from 'child_process';
 import os from 'os';
-import { processAutoReleases } from './services/escrowStateMachine';
+import { processAutoReleases, processAutoEscalations } from './services/escrowStateMachine';
 
 const app: Application = express();
 const server = http.createServer(app);
@@ -200,13 +200,15 @@ async function startServer() {
     
     // Then start the server on all network interfaces
     server.listen(PORT, HOST, () => {
-      // Start auto-release cron (check every hour for 7-day-old job-done bookings)
+      // Start auto-release + auto-escalation cron (every 15 minutes)
       setInterval(async () => {
         try {
           const released = await processAutoReleases(io);
           if (released > 0) console.log(`⏱ Auto-released ${released} overdue booking(s)`);
-        } catch (e) { console.error('Auto-release check error:', e); }
-      }, 60 * 60 * 1000); // every hour
+          const escalated = await processAutoEscalations(io);
+          if (escalated > 0) console.log(`⚖️ Auto-escalated ${escalated} overdue dispute(s)`);
+        } catch (e) { console.error('Cron check error:', e); }
+      }, 15 * 60 * 1000); // every 15 minutes
 
       console.log(`
 ╔═══════════════════════════════════════════════════════╗

@@ -15,6 +15,7 @@ export interface User {
   phone: string;
   name: string;
   role: 'customer' | 'artisan' | 'company';
+  accountType?: 'individual' | 'company';
   verified: boolean;
   password?: string; // Hashed password for authentication
   email?: string;
@@ -219,6 +220,8 @@ export interface Booking {
   releasedAt?: string;
   workProofPhotos?: string[];
   workProofSubmittedAt?: string;
+  jobVideoUrl?: string;           // Client job description video
+  proofVideoUrl?: string;         // Worker completion proof video
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
@@ -256,12 +259,14 @@ export interface ChatMessage {
   conversationId: number;
   senderId: number;
   senderRole: 'customer' | 'artisan' | 'system' | 'ai';
-  type: 'text' | 'image' | 'system' | 'quote' | 'work_proof' | 'escrow_status' | 'milestone' | 'ai_voice_note';
+  type: 'text' | 'image' | 'video' | 'system' | 'quote' | 'work_proof' | 'escrow_status' | 'milestone' | 'ai_voice_note' | 'invoice' | 'invoice_revision';
   content: string;
   imageUrl?: string;
+  videoUrl?: string; // Video file URL
   audioUrl?: string; // Voice note audio file (AI-generated TTS)
   quoteId?: number; // Reference to quote when type === 'quote'
   workProofPhotos?: string[]; // 3 proof photos when type === 'work_proof'
+  proofVideoUrl?: string; // Completion proof video when type === 'work_proof'
   milestoneIndex?: number; // For milestone messages
   status: 'sent' | 'delivered' | 'read';
   createdAt: string;

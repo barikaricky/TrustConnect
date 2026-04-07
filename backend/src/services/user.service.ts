@@ -34,7 +34,8 @@ export class UserService {
     role: 'customer' | 'artisan' | 'company',
     password?: string,
     email?: string,
-    location?: any
+    location?: any,
+    accountType?: 'individual' | 'company'
   ): Promise<User> {
     // Always store phone in canonical +234 format
     const canonicalPhone = UserService.normalizePhone(phone);
@@ -49,6 +50,7 @@ export class UserService {
         phone: canonicalPhone,
         name,
         role,
+        accountType: accountType || (role === 'company' ? 'company' : 'individual'),
         verified: false,
         password,
         email,

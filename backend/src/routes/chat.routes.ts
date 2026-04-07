@@ -9,7 +9,11 @@ import {
   getMessages,
   markAsRead,
   uploadChatImage,
+  uploadChatVideo,
+  sendInvoice,
+  respondToInvoice,
 } from '../controllers/chat.controller';
+import { jobVideoUpload } from '../middleware/videoUpload';
 
 const router = Router();
 
@@ -51,5 +55,12 @@ router.post('/messages/:conversationId/read', markAsRead);
 
 // Image upload
 router.post('/upload-image', upload.single('image'), uploadChatImage);
+
+// Video upload (50MB max — mp4, mov, webm)
+router.post('/upload-video', jobVideoUpload.single('video'), uploadChatVideo);
+
+// Invoice routes
+router.post('/invoice', sendInvoice);
+router.post('/invoice/respond', respondToInvoice);
 
 export default router;

@@ -1,4 +1,6 @@
 import { Request, Response } from 'express';
+import path from 'path';
+import fs from 'fs';
 import { collections, getNextSequence } from '../database/connection';
 import { normalizeImageUrl, normalizeImageUrls } from '../utils/imageUrl';
 import { notifyUser } from './notification.controller';
@@ -21,6 +23,7 @@ export const createBooking = async (req: Request, res: Response) => {
       location,
       estimatedPrice,
       customerNotes,
+      jobVideoUrl,
     } = req.body;
 
     // Validate required fields
@@ -83,6 +86,7 @@ export const createBooking = async (req: Request, res: Response) => {
       },
       estimatedPrice: price,
       escrowAmount: 0,           // No funds held at booking creation — set after quote acceptance
+      jobVideoUrl: jobVideoUrl || null,
       customerNotes: customerNotes || '',
       createdAt: now,
       updatedAt: now,
@@ -1018,5 +1022,356 @@ export const submitWorkProof = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Submit work proof error:', error);
     res.status(500).json({ error: 'Failed to submit work proof' });
+  }
+};
+
+// ════════════════════════════════════════════════════════════════
+// VIDEO ENDPOINTS
+// ════════════════════════════════════════════════════════════════
+
+/**
+ * POST /api/booking/upload-job-video
+ * Client uploads a job description video before creating the booking.
+ * Returns the video URL to include in the subsequent createBooking call.
+ */
+export const uploadJobVideo = async (req: Request, res: Response) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No video uploaded' });
+    }
+
+    const videoUrl = `/uploads/videos/jobs/${req.file.filename}`;
+
+    res.json({
+      success: true,
+      videoUrl,
+      message: 'Job video uploaded successfully',
+    });
+  } catch (error) {
+    console.error('Upload job video error:', error);
+    res.status(500).json({ error: 'Failed to upload job video' });
+  }
+};
+
+/**
+ * POST /api/booking/:id/upload-proof-video
+ * Worker uploads a completion proof video.
+ * Transitions booking to job-done, sends proof message in chat, starts auto-release timer.
+ */
+export const uploadProofVideo = async (req: Request, res: Response) => {
+  try {
+    const bookingId = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
+    const { artisanUserId } = req.body;
+
+    if (!artisanUserId) {
+      return res.status(400).json({ error: 'artisanUserId is required' });
+    }
+    if (!req.file) {
+      return res.status(400).json({ error: 'No proof video uploaded' });
+    }
+
+    const booking = await collections.bookings().findOne({ id: bookingId });
+    if (!booking) {
+      return res.status(404).json({ error: 'Booking not found' });
+    }
+    if (booking.artisanUserId !== parseInt(artisanUserId)) {
+      return res.status(403).json({ error: 'Only the assigned artisan can submit proof' });
+    }
+    if (!['in-progress', 'on-the-way', 'funded'].includes(booking.status)) {
+      return res.status(400).json({
+        error: `Cannot submit proof from status: ${booking.status}. Job must be in-progress.`,
+      });
+    }
+
+    const proofVideoUrl = `/uploads/videos/proofs/${req.file.filename}`;
+    const now = new Date().toISOString();
+    const AUTO_RELEASE_DAYS = 7;
+    const autoReleaseAt = new Date(Date.now() + AUTO_RELEASE_DAYS * 24 * 60 * 60 * 1000).toISOString();
+
+    // 1. Update booking → job-done with proof video
+    await collections.bookings().updateOne(
+      { id: bookingId },
+      {
+        $set: {
+          status: 'job-done' as any,
+          proofVideoUrl,
+          workProofSubmittedAt: now,
+          jobDoneAt: now,
+          autoReleaseAt,
+          updatedAt: now,
+        },
+      }
+    );
+
+    // 2. Post proof message in chat
+    const conversation = await collections.conversations().findOne({
+      $or: [{ bookingId }, { customerId: booking.customerId, artisanUserId: booking.artisanUserId }],
+    });
+
+    if (conversation) {
+      const artisanUser = await collections.users().findOne({ id: booking.artisanUserId });
+      const artisanName = artisanUser ? artisanUser.name : 'Artisan';
+      const messageId = await getNextSequence('messageId');
+
+      await collections.messages().insertOne({
+        id: messageId,
+        conversationId: conversation.id,
+        senderId: booking.artisanUserId,
+        senderRole: 'artisan' as const,
+        type: 'work_proof' as const,
+        content: `${artisanName} has submitted a completion proof video. Please review and release payment.`,
+        proofVideoUrl,
+        status: 'delivered' as const,
+        createdAt: now,
+      });
+
+      await collections.conversations().updateOne(
+        { id: conversation.id },
+        {
+          $set: {
+            lastMessage: '🎥 Work proof video submitted — review to release payment',
+            lastMessageAt: now,
+            updatedAt: now,
+          },
+          $inc: { customerUnread: 1 },
+        }
+      );
+    }
+
+    // 3. Notify customer
+    const io = (req.app as any).io;
+    await notifyUser(
+      booking.customerId,
+      '🎥 Work Proof Video Submitted',
+      'The worker has submitted a completion proof video. Review the work and release payment or raise a dispute.',
+      'booking',
+      { bookingId },
+      io
+    );
+
+    // Confirm to artisan
+    await notifyUser(
+      booking.artisanUserId,
+      '✅ Proof Video Sent!',
+      'Your completion video has been delivered to the client. Payment auto-releases in 7 days if not approved sooner.',
+      'booking',
+      { bookingId },
+      io
+    );
+
+    res.json({
+      success: true,
+      message: 'Proof video submitted. Job marked as done.',
+      proofVideoUrl,
+      bookingStatus: 'job-done',
+      autoReleaseAt,
+    });
+  } catch (error) {
+    console.error('Upload proof video error:', error);
+    res.status(500).json({ error: 'Failed to upload proof video' });
+  }
+};
+
+/**
+ * GET /api/booking/available-jobs
+ * Workers browse unfilled jobs (status = 'pending', no artisan assigned yet or open to any worker).
+ * Supports pagination, filter by trade/location, sort by newest/closest/budget.
+ */
+export const getAvailableJobs = async (req: Request, res: Response) => {
+  try {
+    const {
+      page = '1',
+      limit = '20',
+      trade,
+      minBudget,
+      maxBudget,
+      sortBy = 'newest',
+    } = req.query;
+
+    const pageNum = Math.max(1, parseInt(page as string));
+    const limitNum = Math.min(50, Math.max(1, parseInt(limit as string)));
+    const skip = (pageNum - 1) * limitNum;
+
+    // Build filter: jobs that are open for workers to pick
+    const filter: any = { status: 'pending' };
+
+    if (trade) {
+      filter.serviceType = { $regex: new RegExp(String(trade), 'i') };
+    }
+    if (minBudget || maxBudget) {
+      filter.estimatedPrice = {};
+      if (minBudget) filter.estimatedPrice.$gte = parseFloat(minBudget as string);
+      if (maxBudget) filter.estimatedPrice.$lte = parseFloat(maxBudget as string);
+    }
+
+    // Sort options
+    let sort: any = { createdAt: -1 }; // newest first (default)
+    if (sortBy === 'budget-high') sort = { estimatedPrice: -1 };
+    if (sortBy === 'budget-low') sort = { estimatedPrice: 1 };
+
+    const [jobs, total] = await Promise.all([
+      collections.bookings()
+        .find(filter)
+        .sort(sort)
+        .skip(skip)
+        .limit(limitNum)
+        .toArray(),
+      collections.bookings().countDocuments(filter),
+    ]);
+
+    // Enrich with customer info (limited — no phone until job is picked)
+    const enriched = await Promise.all(
+      jobs.map(async (job) => {
+        const customer = await collections.users().findOne({ id: job.customerId });
+        return {
+          id: job.id,
+          serviceType: job.serviceType,
+          description: job.description,
+          jobVideoUrl: job.jobVideoUrl || null,
+          location: job.location,
+          estimatedPrice: job.estimatedPrice,
+          scheduledDate: job.scheduledDate,
+          scheduledTime: job.scheduledTime,
+          customerName: customer?.name || 'Anonymous',
+          customerRating: customer?.averageRating || null,
+          customerVerified: customer?.verified || false,
+          createdAt: job.createdAt,
+        };
+      })
+    );
+
+    res.json({
+      success: true,
+      jobs: enriched,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.ceil(total / limitNum),
+      },
+    });
+  } catch (error) {
+    console.error('Get available jobs error:', error);
+    res.status(500).json({ error: 'Failed to fetch available jobs' });
+  }
+};
+
+/**
+ * GET /api/booking/:id/client-details
+ * After a worker picks a job, they can see the client's phone, full name, and address.
+ */
+export const getClientDetails = async (req: Request, res: Response) => {
+  try {
+    const bookingId = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id);
+    const { artisanUserId } = req.query;
+
+    if (!artisanUserId) {
+      return res.status(400).json({ error: 'artisanUserId query parameter is required' });
+    }
+
+    const booking = await collections.bookings().findOne({ id: bookingId });
+    if (!booking) {
+      return res.status(404).json({ error: 'Booking not found' });
+    }
+
+    // Only the assigned worker can view client details
+    if (booking.artisanUserId !== parseInt(artisanUserId as string)) {
+      return res.status(403).json({ error: 'Only the assigned worker can view client details' });
+    }
+
+    // Must be past 'pending' — worker has picked the job
+    if (booking.status === 'pending') {
+      return res.status(400).json({ error: 'Accept the job first to view client details' });
+    }
+
+    const customer = await collections.users().findOne({ id: booking.customerId });
+    if (!customer) {
+      return res.status(404).json({ error: 'Customer not found' });
+    }
+
+    res.json({
+      success: true,
+      client: {
+        name: customer.name,
+        phone: customer.phone,
+        email: customer.email,
+        address: booking.location,
+        avatar: normalizeImageUrl((customer as any).avatar, req),
+        isVerified: customer.verified || false,
+      },
+    });
+  } catch (error) {
+    console.error('Get client details error:', error);
+    res.status(500).json({ error: 'Failed to fetch client details' });
+  }
+};
+
+/**
+ * GET /api/booking/video/:filename
+ * Stream video file with HTTP Range support for seek/scrub on mobile.
+ */
+export const streamVideo = async (req: Request, res: Response) => {
+  try {
+    const filename = Array.isArray(req.params.filename) ? req.params.filename[0] : req.params.filename;
+
+    // Sanitize filename — only allow alphanumeric, dash, dot, underscore
+    if (!/^[\w\-.]+$/.test(filename)) {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
+
+    // Search in both job and proof directories
+    let videoPath = path.join(__dirname, '../../uploads/videos/jobs', filename);
+    if (!fs.existsSync(videoPath)) {
+      videoPath = path.join(__dirname, '../../uploads/videos/proofs', filename);
+    }
+    if (!fs.existsSync(videoPath)) {
+      return res.status(404).json({ error: 'Video not found' });
+    }
+
+    // Prevent directory traversal
+    const resolvedPath = path.resolve(videoPath);
+    const allowedBase = path.resolve(path.join(__dirname, '../../uploads/videos'));
+    if (!resolvedPath.startsWith(allowedBase)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const stat = fs.statSync(videoPath);
+    const fileSize = stat.size;
+    const ext = path.extname(filename).toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      '.mp4': 'video/mp4',
+      '.mov': 'video/quicktime',
+      '.webm': 'video/webm',
+    };
+    const contentType = mimeTypes[ext] || 'video/mp4';
+
+    const range = req.headers.range;
+
+    if (range) {
+      // Range request — stream partial content for seek support
+      const parts = range.replace(/bytes=/, '').split('-');
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+      const chunkSize = end - start + 1;
+
+      const stream = fs.createReadStream(videoPath, { start, end });
+      res.writeHead(206, {
+        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+        'Accept-Ranges': 'bytes',
+        'Content-Length': chunkSize,
+        'Content-Type': contentType,
+      });
+      stream.pipe(res);
+    } else {
+      // Full file delivery
+      res.writeHead(200, {
+        'Content-Length': fileSize,
+        'Content-Type': contentType,
+      });
+      fs.createReadStream(videoPath).pipe(res);
+    }
+  } catch (error) {
+    console.error('Stream video error:', error);
+    res.status(500).json({ error: 'Failed to stream video' });
   }
 };

@@ -6,6 +6,7 @@ import {
   FlatList,
   TextInput,
   TouchableOpacity,
+  Pressable,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -28,8 +29,12 @@ import {
   getMessages,
   markAsRead,
   uploadChatImage,
+  uploadChatVideo,
   submitWorkProof,
   getBookingForChat,
+  sendInvoice,
+  respondToInvoice,
+  InvoiceData,
   ChatMessage,
   Conversation,
 } from '../services/chatService';
@@ -46,7 +51,7 @@ import {
   Quote,
   Milestone,
 } from '../services/escrowService';
-import { releaseFund } from '../services/bookingService';
+import { releaseFund, uploadProofVideo as uploadProofVideoApi } from '../services/bookingService';
 import { EscrowStatusCard, MilestoneCard, MilestoneProgress, QuotePdfButton } from '../components/EscrowChatCard';
 import { API_BASE_URL } from '../config/api';
 
@@ -128,6 +133,22 @@ export default function ChatScreen() {
 
   // ── Work proof declaration ───────────────────────────────────
   const [declarationAgreed, setDeclarationAgreed] = useState(false);
+
+  // ── Invoice state (artisan sends, customer responds) ────────
+  const [showInvoiceForm, setShowInvoiceForm] = useState(false);
+  const [invoiceDesc, setInvoiceDesc] = useState('');
+  const [invoiceLaborCost, setInvoiceLaborCost] = useState('');
+  const [invoiceMaterialsCost, setInvoiceMaterialsCost] = useState('');
+  const [invoiceDuration, setInvoiceDuration] = useState('');
+  const [sendingInvoice, setSendingInvoice] = useState(false);
+  const [respondingInvoice, setRespondingInvoice] = useState<number | null>(null);
+
+  // ── Video message state ──────────────────────────────────────
+  const [uploadingVideo, setUploadingVideo] = useState(false);
+
+  // ── Video proof state ────────────────────────────────────────
+  const [proofVideoUri, setProofVideoUri] = useState<string | null>(null);
+  const [uploadingProofVideo, setUploadingProofVideo] = useState(false);
 
   const currentUserId = user?.id || user?.userId;
   const currentRole = userRole || 'customer';
@@ -549,6 +570,134 @@ export default function ChatScreen() {
     } catch (e) { /* ignore */ }
   };
 
+  // ─── Video Message Handler ───────────────────────────────────
+  const handleVideoPick = async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission Required', 'Please allow access to your media library.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['videos'],
+        videoMaxDuration: 300,
+        quality: 0.7,
+      });
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+        if (asset.fileSize && asset.fileSize > 50 * 1024 * 1024) {
+          Alert.alert('Video Too Large', 'Please select a video under 50MB.');
+          return;
+        }
+        setUploadingVideo(true);
+        try {
+          const videoUrl = await uploadChatVideo(asset.uri);
+          // Send as video message
+          if (conversation) {
+            await sendMessageApi(
+              conversation.id,
+              currentUserId,
+              currentRole as 'customer' | 'artisan',
+              '🎥 Video message',
+              'video' as any,
+              videoUrl
+            );
+            const msgs = await getMessages(conversation.id);
+            setMessages(msgs.messages);
+          }
+        } catch {
+          Alert.alert('Error', 'Failed to send video. Please try again.');
+        } finally {
+          setUploadingVideo(false);
+        }
+      }
+    } catch {
+      Alert.alert('Error', 'Could not open video library');
+    }
+  };
+
+  // ─── Invoice Handlers ───────────────────────────────────────
+  const handleSendInvoice = async () => {
+    if (sendingInvoice) return;
+    const labor = parseFloat(invoiceLaborCost);
+    const materials = parseFloat(invoiceMaterialsCost);
+    if (!labor || isNaN(labor)) {
+      Alert.alert('Invalid', 'Please enter a valid labor cost.');
+      return;
+    }
+    setSendingInvoice(true);
+    try {
+      await sendInvoice(
+        conversation!.id,
+        currentUserId,
+        activeBookingId || undefined,
+        {
+          description: invoiceDesc.trim(),
+          laborCost: labor,
+          materialsCost: isNaN(materials) ? 0 : materials,
+          duration: invoiceDuration.trim(),
+        }
+      );
+      setShowInvoiceForm(false);
+      setInvoiceDesc('');
+      setInvoiceLaborCost('');
+      setInvoiceMaterialsCost('');
+      setInvoiceDuration('');
+      // Refresh messages
+      if (conversation) {
+        const msgs = await getMessages(conversation.id);
+        setMessages(msgs.messages);
+      }
+    } catch (error: any) {
+      Alert.alert('Error', error?.response?.data?.error || 'Failed to send invoice.');
+    } finally {
+      setSendingInvoice(false);
+    }
+  };
+
+  const handleInvoiceResponse = async (messageId: number, action: 'accepted' | 'rejected' | 'revision_requested') => {
+    if (action === 'rejected' || action === 'revision_requested') {
+      Alert.alert(
+        action === 'rejected' ? 'Reject Invoice' : 'Request Revision',
+        action === 'rejected' ? 'Are you sure you want to reject this invoice?' : 'Provide a reason for the revision:',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: action === 'rejected' ? 'Reject' : 'Request Revision',
+            style: action === 'rejected' ? 'destructive' : 'default',
+            onPress: async () => {
+              setRespondingInvoice(messageId);
+              try {
+                await respondToInvoice(messageId, action);
+                if (conversation) {
+                  const msgs = await getMessages(conversation.id);
+                  setMessages(msgs.messages);
+                }
+              } catch {
+                Alert.alert('Error', 'Failed to respond to invoice.');
+              } finally {
+                setRespondingInvoice(null);
+              }
+            },
+          },
+        ]
+      );
+    } else {
+      setRespondingInvoice(messageId);
+      try {
+        await respondToInvoice(messageId, action);
+        if (conversation) {
+          const msgs = await getMessages(conversation.id);
+          setMessages(msgs.messages);
+        }
+      } catch {
+        Alert.alert('Error', 'Failed to accept invoice.');
+      } finally {
+        setRespondingInvoice(null);
+      }
+    }
+  };
+
   // ─── Work Proof Handlers ──────────────────────────────────────
   const handlePickProofPhoto = async (index: number) => {
     try {
@@ -577,10 +726,36 @@ export default function ChatScreen() {
     }
   };
 
+  const handlePickProofVideo = async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission Required', 'Please allow access to your media library.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['videos'],
+        videoMaxDuration: 300,
+        quality: 0.7,
+      });
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+        if (asset.fileSize && asset.fileSize > 50 * 1024 * 1024) {
+          Alert.alert('Video Too Large', 'Please select a video under 50MB.');
+          return;
+        }
+        setProofVideoUri(asset.uri);
+      }
+    } catch {
+      Alert.alert('Error', 'Could not open video library');
+    }
+  };
+
   const handleSubmitWorkProof = async () => {
     const validPhotos = workProofPhotos.filter(Boolean) as string[];
-    if (validPhotos.length < 3) {
-      Alert.alert('3 Photos Required', 'Please upload all 3 proof photos before submitting.');
+    // Accept either 3 photos OR a proof video
+    if (validPhotos.length < 3 && !proofVideoUri) {
+      Alert.alert('Proof Required', 'Please upload 3 photos or a proof video before submitting.');
       return;
     }
     if (!activeBookingId) {
@@ -589,10 +764,18 @@ export default function ChatScreen() {
     }
     setSubmittingWork(true);
     try {
-      await submitWorkProof(activeBookingId, currentUserId, validPhotos);
+      if (proofVideoUri) {
+        // Upload proof video
+        setUploadingProofVideo(true);
+        await uploadProofVideoApi(activeBookingId, currentUserId, proofVideoUri);
+        setUploadingProofVideo(false);
+      } else {
+        await submitWorkProof(activeBookingId, currentUserId, validPhotos);
+      }
       setBookingStatus('job-done');
       setShowWorkProofModal(false);
       setWorkProofPhotos([null, null, null]);
+      setProofVideoUri(null);
       setDeclarationAgreed(false);
       // Refresh messages to show work_proof bubble
       if (conversation) {
@@ -607,6 +790,7 @@ export default function ChatScreen() {
       Alert.alert('Error', error?.response?.data?.error || 'Failed to submit work proof. Try again.');
     } finally {
       setSubmittingWork(false);
+      setUploadingProofVideo(false);
     }
   };
 
@@ -997,6 +1181,145 @@ export default function ChatScreen() {
       );
     }
 
+    // ── Invoice message ──────────────────────────────────────────
+    if (item.type === 'invoice') {
+      let invoice: InvoiceData | null = null;
+      try { invoice = JSON.parse(item.content); } catch { /* ignore */ }
+      if (invoice) {
+        const isCustomer = currentRole === 'customer';
+        const isPending = invoice.status === 'pending';
+        const isResponding = respondingInvoice === item.id;
+        return (
+          <View style={styles.systemMsgContainer}>
+            <View style={invoiceStyles.card}>
+              <LinearGradient colors={[NAVY, '#283593']} style={invoiceStyles.header}>
+                <MaterialCommunityIcons name="receipt" size={18} color={GOLD} />
+                <Text style={invoiceStyles.headerTitle}>Invoice</Text>
+                <View style={[
+                  invoiceStyles.statusBadge,
+                  invoice.status === 'accepted' && { backgroundColor: '#4CAF50' },
+                  invoice.status === 'rejected' && { backgroundColor: '#E53935' },
+                  invoice.status === 'revision_requested' && { backgroundColor: '#F57F17' },
+                ]}>
+                  <Text style={invoiceStyles.statusText}>
+                    {invoice.status === 'pending' ? 'Pending' : invoice.status === 'accepted' ? 'Accepted' : invoice.status === 'rejected' ? 'Rejected' : 'Revision'}
+                  </Text>
+                </View>
+              </LinearGradient>
+              <View style={invoiceStyles.body}>
+                {invoice.description ? <Text style={invoiceStyles.desc}>{invoice.description}</Text> : null}
+                <View style={invoiceStyles.line}>
+                  <Text style={invoiceStyles.label}>Labor</Text>
+                  <Text style={invoiceStyles.value}>₦{invoice.laborCost.toLocaleString()}</Text>
+                </View>
+                <View style={invoiceStyles.line}>
+                  <Text style={invoiceStyles.label}>Materials</Text>
+                  <Text style={invoiceStyles.value}>₦{invoice.materialsCost.toLocaleString()}</Text>
+                </View>
+                <View style={[invoiceStyles.line, { borderTopWidth: 1, borderTopColor: '#e0e0e0', paddingTop: 6 }]}>
+                  <Text style={invoiceStyles.label}>Service Fee (5%)</Text>
+                  <Text style={invoiceStyles.value}>₦{invoice.serviceFee.toLocaleString()}</Text>
+                </View>
+                <View style={[invoiceStyles.line, { borderTopWidth: 2, borderTopColor: NAVY, paddingTop: 8 }]}>
+                  <Text style={[invoiceStyles.label, { fontWeight: '800', color: NAVY }]}>TOTAL</Text>
+                  <Text style={[invoiceStyles.value, { fontWeight: '800', color: NAVY, fontSize: 18 }]}>₦{invoice.grandTotal.toLocaleString()}</Text>
+                </View>
+                {invoice.duration ? (
+                  <View style={invoiceStyles.durationRow}>
+                    <MaterialCommunityIcons name="clock-outline" size={14} color="#78909C" />
+                    <Text style={invoiceStyles.durationText}>{invoice.duration}</Text>
+                  </View>
+                ) : null}
+                {/* Actions for customer */}
+                {isCustomer && isPending && (
+                  <View style={invoiceStyles.actions}>
+                    <TouchableOpacity
+                      style={invoiceStyles.rejectBtn}
+                      onPress={() => handleInvoiceResponse(item.id, 'rejected')}
+                      disabled={isResponding}
+                    >
+                      <Ionicons name="close-circle-outline" size={14} color="#E53935" />
+                      <Text style={invoiceStyles.rejectText}>Reject</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={invoiceStyles.revisionBtn}
+                      onPress={() => handleInvoiceResponse(item.id, 'revision_requested')}
+                      disabled={isResponding}
+                    >
+                      <Ionicons name="chatbubble-ellipses-outline" size={14} color="#F57F17" />
+                      <Text style={invoiceStyles.revisionText}>Revise</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={invoiceStyles.acceptBtn}
+                      onPress={() => handleInvoiceResponse(item.id, 'accepted')}
+                      disabled={isResponding}
+                    >
+                      {isResponding ? <ActivityIndicator size="small" color="#fff" /> : (
+                        <>
+                          <Ionicons name="checkmark-circle" size={14} color="#fff" />
+                          <Text style={invoiceStyles.acceptText}>Accept</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                )}
+                {invoice.revisionReason && (
+                  <View style={invoiceStyles.revisionReasonBox}>
+                    <Text style={invoiceStyles.revisionReasonText}>💬 {invoice.revisionReason}</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={invoiceStyles.time}>
+                {new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </Text>
+            </View>
+          </View>
+        );
+      }
+    }
+
+    // ── Invoice revision system message ──────────────────────────
+    if (item.type === 'invoice_revision') {
+      return (
+        <View style={styles.systemMsgContainer}>
+          <View style={[styles.systemMsgBubble, { backgroundColor: '#FFF3E0' }]}>
+            <Ionicons name="refresh-circle" size={14} color="#F57F17" />
+            <Text style={styles.systemMsgText}>{item.content}</Text>
+          </View>
+        </View>
+      );
+    }
+
+    // ── Video message ──────────────────────────────────────────
+    if (item.type === 'video' && (item.videoUrl || item.imageUrl)) {
+      const videoSrc = item.videoUrl || item.imageUrl || '';
+      const fullUrl = videoSrc.startsWith('http') ? videoSrc : `${API_BASE_URL.replace('/api', '')}${videoSrc}`;
+      return (
+        <View style={[styles.msgRow, isMine ? styles.msgRowRight : styles.msgRowLeft]}>
+          <View style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleTheirs, { padding: 4, overflow: 'hidden' }]}>
+            <Pressable
+              style={videoMsgStyles.container}
+              onPress={() => {
+                // Navigate to a full-screen player or open in-place
+                Alert.alert('Video', 'Video playback', [{ text: 'OK' }]);
+              }}
+            >
+              <View style={videoMsgStyles.placeholder}>
+                <MaterialCommunityIcons name="play-circle-outline" size={48} color="#fff" />
+                <Text style={videoMsgStyles.label}>Tap to play video</Text>
+              </View>
+            </Pressable>
+            <View style={styles.msgFooter}>
+              <Text style={[styles.msgTime, isMine && { color: 'rgba(255,255,255,0.6)' }]}>
+                {new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </Text>
+              {isMine && <ReadReceipt status={item.status} />}
+            </View>
+          </View>
+        </View>
+      );
+    }
+
     return (
       <View style={[styles.msgRow, isMine ? styles.msgRowRight : styles.msgRowLeft]}>
         <View style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleTheirs]}>
@@ -1166,7 +1489,7 @@ export default function ChatScreen() {
             >
               <LinearGradient colors={['#F57F17', '#F9A825']} style={styles.escrowActionGradient}>
                 <MaterialCommunityIcons name="camera" size={18} color="#fff" />
-                <Text style={styles.escrowActionText}>Submit Work Proof (3 Photos)</Text>
+                <Text style={styles.escrowActionText}>Submit Work Proof</Text>
               </LinearGradient>
             </TouchableOpacity>
           )}
@@ -1447,7 +1770,35 @@ export default function ChatScreen() {
                 ))}
               </View>
 
-              <Text style={styles.proofSectionTitle}>Upload 3 Photos of Completed Work</Text>
+              <Text style={styles.proofSectionTitle}>Option 1: Upload Proof Video</Text>
+              <TouchableOpacity
+                style={[styles.proofPhotoSlot, { width: '100%', height: 100, marginBottom: 12 }, proofVideoUri && styles.proofPhotoSlotFilled]}
+                onPress={handlePickProofVideo}
+                disabled={uploadingProofVideo}
+              >
+                {uploadingProofVideo ? (
+                  <ActivityIndicator size="small" color={NAVY} />
+                ) : proofVideoUri ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <MaterialCommunityIcons name="video-check" size={28} color="#4CAF50" />
+                    <Text style={{ fontSize: 14, color: '#4CAF50', fontWeight: '600' }}>Video selected</Text>
+                    <TouchableOpacity onPress={() => setProofVideoUri(null)}>
+                      <Ionicons name="close-circle" size={22} color="#E53935" />
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <>
+                    <MaterialCommunityIcons name="video-plus" size={28} color="#90A4AE" />
+                    <Text style={styles.proofPhotoLabel}>Select proof video (max 5 min)</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              <View style={{ alignItems: 'center', marginBottom: 12 }}>
+                <Text style={{ fontSize: 13, color: '#90A4AE', fontWeight: '600' }}>— OR —</Text>
+              </View>
+
+              <Text style={styles.proofSectionTitle}>Option 2: Upload 3 Photos</Text>
               <View style={styles.proofPhotoGrid}>
                 {[0, 1, 2].map((index) => (
                   <TouchableOpacity
@@ -1481,7 +1832,7 @@ export default function ChatScreen() {
                 ))}
               </View>
               <Text style={styles.proofPhotoCount}>
-                {workProofPhotos.filter(Boolean).length}/3 photos uploaded
+                {proofVideoUri ? '✅ Video selected' : `${workProofPhotos.filter(Boolean).length}/3 photos uploaded`}
               </Text>
 
               {/* Declaration checkbox */}
@@ -1494,17 +1845,17 @@ export default function ChatScreen() {
                   {declarationAgreed && <Ionicons name="checkmark" size={14} color="#fff" />}
                 </View>
                 <Text style={styles.declarationText}>
-                  I confirm that I have completed all agreed work professionally and the photos above accurately represent the finished job.
+                  I confirm that I have completed all agreed work professionally and the evidence above accurately represents the finished job.
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={[
                   styles.proofSubmitBtn,
-                  (workProofPhotos.filter(Boolean).length < 3 || !declarationAgreed || submittingWork) && styles.proofSubmitBtnDisabled,
+                  ((workProofPhotos.filter(Boolean).length < 3 && !proofVideoUri) || !declarationAgreed || submittingWork) && styles.proofSubmitBtnDisabled,
                 ]}
                 onPress={handleSubmitWorkProof}
-                disabled={workProofPhotos.filter(Boolean).length < 3 || !declarationAgreed || submittingWork}
+                disabled={(workProofPhotos.filter(Boolean).length < 3 && !proofVideoUri) || !declarationAgreed || submittingWork}
               >
                 {submittingWork ? (
                   <ActivityIndicator size="small" color="#fff" />
@@ -1520,16 +1871,133 @@ export default function ChatScreen() {
         </View>
       </Modal>
 
+      {/* ── Invoice Form Modal (Artisan) ──────────────────────── */}
+      <Modal visible={showInvoiceForm} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.quoteFormContainer}>
+            <LinearGradient colors={['#1a237e', '#283593']} style={styles.quoteFormHeader}>
+              <MaterialCommunityIcons name="receipt" size={22} color={GOLD} />
+              <Text style={styles.quoteFormTitle}>Send Invoice</Text>
+              <TouchableOpacity onPress={() => setShowInvoiceForm(false)}>
+                <Ionicons name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+            </LinearGradient>
+            <ScrollView style={styles.quoteFormBody} keyboardShouldPersistTaps="handled">
+              <Text style={styles.quoteFieldLabel}>Description</Text>
+              <TextInput
+                style={styles.quoteFieldInput}
+                placeholder="Describe the work and charges..."
+                placeholderTextColor="#90A4AE"
+                value={invoiceDesc}
+                onChangeText={setInvoiceDesc}
+                multiline
+                numberOfLines={3}
+              />
+
+              <Text style={styles.quoteFieldLabel}>Labor Cost (₦) *</Text>
+              <TextInput
+                style={styles.quoteFieldInput}
+                placeholder="e.g. 5000"
+                placeholderTextColor="#90A4AE"
+                value={invoiceLaborCost}
+                onChangeText={setInvoiceLaborCost}
+                keyboardType="numeric"
+              />
+
+              <Text style={styles.quoteFieldLabel}>Materials Cost (₦)</Text>
+              <TextInput
+                style={styles.quoteFieldInput}
+                placeholder="e.g. 3500"
+                placeholderTextColor="#90A4AE"
+                value={invoiceMaterialsCost}
+                onChangeText={setInvoiceMaterialsCost}
+                keyboardType="numeric"
+              />
+
+              <Text style={styles.quoteFieldLabel}>Duration</Text>
+              <TextInput
+                style={styles.quoteFieldInput}
+                placeholder="e.g. 2 hours"
+                placeholderTextColor="#90A4AE"
+                value={invoiceDuration}
+                onChangeText={setInvoiceDuration}
+              />
+
+              {/* Preview */}
+              {invoiceLaborCost && (
+                <View style={styles.quotePreview}>
+                  <Text style={styles.quotePreviewTitle}>Invoice Preview</Text>
+                  <View style={styles.quoteLine}>
+                    <Text style={styles.quoteLabel}>Labor</Text>
+                    <Text style={styles.quoteValue}>₦{Number(invoiceLaborCost || 0).toLocaleString()}</Text>
+                  </View>
+                  <View style={styles.quoteLine}>
+                    <Text style={styles.quoteLabel}>Materials</Text>
+                    <Text style={styles.quoteValue}>₦{Number(invoiceMaterialsCost || 0).toLocaleString()}</Text>
+                  </View>
+                  <View style={[styles.quoteLine, styles.quoteSubtotal]}>
+                    <Text style={styles.quoteLabelBold}>Subtotal</Text>
+                    <Text style={styles.quoteValueBold}>
+                      ₦{(Number(invoiceLaborCost || 0) + Number(invoiceMaterialsCost || 0)).toLocaleString()}
+                    </Text>
+                  </View>
+                  <View style={styles.quoteLine}>
+                    <Text style={styles.quoteLabel}>Service Fee (5%)</Text>
+                    <Text style={styles.quoteValue}>
+                      ₦{Math.round((Number(invoiceLaborCost || 0) + Number(invoiceMaterialsCost || 0)) * 0.05).toLocaleString()}
+                    </Text>
+                  </View>
+                  <View style={[styles.quoteLine, styles.quoteTotal]}>
+                    <Text style={styles.quoteTotalLabel}>TOTAL</Text>
+                    <Text style={styles.quoteTotalValue}>
+                      ₦{Math.round((Number(invoiceLaborCost || 0) + Number(invoiceMaterialsCost || 0)) * 1.05).toLocaleString()}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              <TouchableOpacity
+                style={[styles.quoteSubmitBtn, sendingInvoice && { opacity: 0.7 }]}
+                onPress={handleSendInvoice}
+                disabled={sendingInvoice}
+              >
+                {sendingInvoice ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons name="send" size={16} color="#fff" />
+                    <Text style={styles.quoteSubmitText}>Send Invoice</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
       {/* Input bar */}
       <View style={styles.inputBar}>
         <TouchableOpacity style={styles.attachBtn} onPress={handleImagePick}>
           <Ionicons name="image-outline" size={22} color="#78909C" />
         </TouchableOpacity>
 
+        <TouchableOpacity style={styles.attachBtn} onPress={handleVideoPick} disabled={uploadingVideo}>
+          {uploadingVideo ? (
+            <ActivityIndicator size="small" color={GOLD} />
+          ) : (
+            <MaterialCommunityIcons name="video-outline" size={22} color="#78909C" />
+          )}
+        </TouchableOpacity>
+
         {currentRole === 'artisan' && (
-          <TouchableOpacity style={styles.attachBtn} onPress={() => setShowQuoteForm(true)}>
-            <MaterialCommunityIcons name="file-document-outline" size={22} color={GOLD} />
-          </TouchableOpacity>
+          <>
+            <TouchableOpacity style={styles.attachBtn} onPress={() => setShowQuoteForm(true)}>
+              <MaterialCommunityIcons name="file-document-outline" size={22} color={GOLD} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.attachBtn} onPress={() => setShowInvoiceForm(true)}>
+              <MaterialCommunityIcons name="receipt" size={22} color={GOLD} />
+            </TouchableOpacity>
+          </>
         )}
 
         <View style={styles.inputWrapper}>
@@ -1925,4 +2393,88 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: '#FFE082',
   },
   negotiatingBannerText: { color: '#E65100', fontSize: 13, fontWeight: '600', flex: 1 },
+});
+
+// ── Invoice Card Styles ──────────────────────────────────────
+const invoiceStyles = StyleSheet.create({
+  card: {
+    width: '90%',
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+    marginVertical: 6,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  headerTitle: { flex: 1, fontSize: 16, fontWeight: '700', color: '#fff' },
+  statusBadge: {
+    backgroundColor: '#78909C',
+    paddingHorizontal: 10, paddingVertical: 3, borderRadius: 12,
+  },
+  statusText: { fontSize: 11, fontWeight: '700', color: '#fff' },
+  body: { padding: 14 },
+  desc: { fontSize: 14, color: '#546E7A', marginBottom: 10, lineHeight: 20 },
+  line: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'center', marginBottom: 6,
+  },
+  label: { fontSize: 13, color: '#78909C' },
+  value: { fontSize: 14, fontWeight: '600', color: '#263238' },
+  durationRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    marginTop: 8,
+  },
+  durationText: { fontSize: 12, color: '#78909C' },
+  actions: {
+    flexDirection: 'row', gap: 8, marginTop: 14,
+    justifyContent: 'flex-end',
+  },
+  rejectBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 12, paddingVertical: 8,
+    borderRadius: 10, borderWidth: 1, borderColor: '#E53935',
+  },
+  rejectText: { fontSize: 12, fontWeight: '700', color: '#E53935' },
+  revisionBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 12, paddingVertical: 8,
+    borderRadius: 10, borderWidth: 1, borderColor: '#F57F17',
+  },
+  revisionText: { fontSize: 12, fontWeight: '700', color: '#F57F17' },
+  acceptBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 16, paddingVertical: 8,
+    borderRadius: 10, backgroundColor: '#4CAF50',
+  },
+  acceptText: { fontSize: 12, fontWeight: '700', color: '#fff' },
+  revisionReasonBox: {
+    marginTop: 10, backgroundColor: '#FFF3E0',
+    padding: 10, borderRadius: 8,
+  },
+  revisionReasonText: { fontSize: 12, color: '#E65100', fontStyle: 'italic' },
+  time: {
+    fontSize: 11, color: '#90A4AE',
+    textAlign: 'right', paddingHorizontal: 14, paddingBottom: 8,
+  },
+});
+
+// ── Video Message Styles ──────────────────────────────────────
+const videoMsgStyles = StyleSheet.create({
+  container: {
+    width: 220, height: 160,
+    borderRadius: 12, overflow: 'hidden',
+    backgroundColor: '#1a1a2e',
+  },
+  placeholder: {
+    flex: 1,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  label: { fontSize: 12, color: '#ccc', marginTop: 4 },
 });

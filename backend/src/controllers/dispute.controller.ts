@@ -11,7 +11,7 @@ import { getNextSequence, collections, Dispute, DisputeSettlementOffer } from '.
  * - Trust score impact
  */
 
-const NEGOTIATION_HOURS = 48;
+const NEGOTIATION_HOURS = 7;
 
 /**
  * POST /api/dispute/raise
@@ -132,7 +132,7 @@ export async function raiseDispute(req: Request, res: Response) {
         senderId: 0,
         senderRole: 'system' as const,
         type: 'system' as const,
-        content: `⚠️ Dispute raised by ${raisedByLabel}: "${category.replace(/_/g, ' ')}". Escrow funds are frozen. You have 48 hours to negotiate before admin review.`,
+        content: `⚠️ Dispute raised by ${raisedByLabel}: "${category.replace(/_/g, ' ')}". Escrow funds are frozen. You have ${NEGOTIATION_HOURS} hours to negotiate before admin review.`,
         status: 'sent' as const,
         createdAt: now,
       };
@@ -149,7 +149,7 @@ export async function raiseDispute(req: Request, res: Response) {
 
     return res.status(201).json({
       success: true,
-      message: 'Dispute raised. 48-hour negotiation period started.',
+      message: `Dispute raised. ${NEGOTIATION_HOURS}-hour negotiation period started.`,
       dispute,
     });
   } catch (error) {
@@ -626,8 +626,14 @@ export async function uploadDisputeEvidence(req: Request, res: Response) {
       return res.status(400).json({ success: false, message: 'No file uploaded' });
     }
 
-    const imageUrl = `/uploads/disputes/${req.file.filename}`;
-    return res.json({ success: true, imageUrl });
+    const fileUrl = `/uploads/disputes/${req.file.filename}`;
+    const isVideo = /video/.test(req.file.mimetype);
+
+    return res.json({
+      success: true,
+      ...(isVideo ? { videoUrl: fileUrl } : { imageUrl: fileUrl }),
+      url: fileUrl,
+    });
   } catch (error) {
     console.error('Upload evidence error:', error);
     return res.status(500).json({ success: false, message: 'Failed to upload' });

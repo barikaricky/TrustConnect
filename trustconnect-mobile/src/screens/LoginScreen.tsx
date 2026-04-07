@@ -29,6 +29,14 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 type UserType = 'customer' | 'artisan' | 'company';
 
+/** Determine the dashboard route from role + accountType */
+function getDashboardRoute(role: string, accountType?: string): string {
+  if (role === 'artisan' && accountType === 'company') return '/company-worker-dashboard';
+  if (role === 'artisan') return '/artisan-dashboard';
+  if (role === 'company') return '/company-dashboard';
+  return '/customer-home';
+}
+
 export default function LoginScreen() {
   const auth = useAuth();
   const [userType, setUserType] = useState<UserType>('customer');
@@ -132,6 +140,7 @@ export default function LoginScreen() {
           name: response.data.user.fullName || '',
           phone: response.data.user.phone,
           role: response.data.user.role as any,
+          accountType: response.data.user.accountType,
         },
         response.data.token
       );
@@ -139,16 +148,9 @@ export default function LoginScreen() {
       // Show login notification
       showLoginNotification(response.data.user.fullName || 'User');
 
-      // Navigate based on user type from backend
-      if (response.data.user.role === 'customer') {
-        router.replace('/customer-home');
-      } else if (response.data.user.role === 'artisan') {
-        router.replace('/artisan-dashboard');
-      } else if (response.data.user.role === 'company') {
-        router.replace('/company-dashboard');
-      } else {
-        throw new Error('Invalid user role');
-      }
+      // Navigate based on role + accountType
+      const route = getDashboardRoute(response.data.user.role, response.data.user.accountType);
+      router.replace(route as any);
     } catch (err: any) {
       console.error('❌ Login error:', err.message);
       
@@ -245,18 +247,15 @@ export default function LoginScreen() {
               name: userData?.fullName || userData?.name || '',
               phone: userData?.phone,
               role: (userData?.role || userType) as any,
+              accountType: userData?.accountType,
             },
             response.data.data.token
           );
 
-          // Navigate based on user type
-          if (userData?.role === 'customer' || userType === 'customer') {
-            router.replace('/customer-home');
-          } else if (userData?.role === 'artisan' || userType === 'artisan') {
-            router.replace('/artisan-dashboard');
-          } else if (userData?.role === 'company' || userType === 'company') {
-            router.replace('/company-dashboard');
-          }
+          // Navigate based on role + accountType
+          const role = userData?.role || userType;
+          const route = getDashboardRoute(role, userData?.accountType);
+          router.replace(route as any);
         }
       }
     } catch (err: any) {
@@ -325,13 +324,8 @@ export default function LoginScreen() {
         showLoginNotification(storedUser.fullName || storedUser.name);
         
         // Navigate based on user role
-        if (storedUser.role === 'customer') {
-          router.replace('/customer-home');
-        } else if (storedUser.role === 'artisan') {
-          router.replace('/artisan-dashboard');
-        } else if (storedUser.role === 'company') {
-          router.replace('/company-dashboard');
-        }
+        const route = getDashboardRoute(storedUser.role, storedUser.accountType);
+        router.replace(route as any);
       } else {
         console.log('❌ Biometric authentication failed:', result.error);
         Alert.alert('Authentication Failed', 'Please try again or use your password.');

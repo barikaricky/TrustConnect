@@ -214,7 +214,8 @@ export async function transitionToJobDone(
   bookingId: number,
   artisanUserId: number,
   workProofPhotos: string[],
-  io: any
+  io: any,
+  proofVideoUrl?: string
 ): Promise<{ success: boolean; message: string }> {
   const booking = await collections.bookings().findOne({ id: bookingId });
   if (!booking) return { success: false, message: 'Booking not found' };
@@ -224,8 +225,9 @@ export async function transitionToJobDone(
     return { success: false, message: `Cannot mark as done from status: ${booking.status}` };
   }
 
-  if (!workProofPhotos || workProofPhotos.length < 1) {
-    return { success: false, message: 'At least one work proof photo/video is required' };
+  // Accept either proof video or photos
+  if (!proofVideoUrl && (!workProofPhotos || workProofPhotos.length < 1)) {
+    return { success: false, message: 'A proof video or at least one work proof photo is required' };
   }
 
   const now = new Date().toISOString();
@@ -237,6 +239,7 @@ export async function transitionToJobDone(
       $set: {
         status: 'job-done' as any,
         workProofPhotos,
+        ...(proofVideoUrl ? { proofVideoUrl } : {}),
         workProofSubmittedAt: now,
         jobDoneAt: now,
         autoReleaseAt,
@@ -255,8 +258,11 @@ export async function transitionToJobDone(
       senderId: artisanUserId,
       senderRole: 'artisan' as const,
       type: 'work_proof' as const,
-      content: '📸 Work completed! Please review and approve to release payment.',
+      content: proofVideoUrl
+        ? '🎥 Work completed! Please review the proof video and approve to release payment.'
+        : '📸 Work completed! Please review and approve to release payment.',
       workProofPhotos,
+      ...(proofVideoUrl ? { proofVideoUrl } : {}),
       status: 'sent' as const,
       createdAt: now,
     };
@@ -594,6 +600,61 @@ export async function processAutoReleases(io: any): Promise<number> {
     }
   }
   return released;
+}
+
+// ── 4b. Auto-escalate disputes past negotiation deadline ────
+
+export async function processAutoEscalations(io: any): Promise<number> {
+  const now = new Date().toISOString();
+
+  // Find disputes that are still open/negotiating but past their deadline
+  const overdue = await collections.disputes()
+    .find({
+      status: { $in: ['open', 'negotiating'] },
+      negotiationDeadline: { $lte: now },
+    })
+    .toArray();
+
+  let escalated = 0;
+  for (const dispute of overdue) {
+    await collections.disputes().updateOne(
+      { id: dispute.id },
+      { $set: { status: 'escalated' as any, updatedAt: now } }
+    );
+
+    // Notify via chat
+    const booking = await collections.bookings().findOne({ id: dispute.bookingId });
+    if (booking) {
+      const conversation = await getConversationForBooking(booking);
+      if (conversation) {
+        await sendSystemMessage(
+          conversation.id,
+          '⚖️ Negotiation window expired. Dispute auto-escalated to admin review.',
+          io,
+          { type: 'escrow_status' }
+        );
+      }
+
+      await notifyUser(
+        booking.customerId,
+        '⚖️ Dispute Escalated',
+        'Negotiation time expired. An admin will review the dispute.',
+        'dispute',
+        { disputeId: dispute.id, bookingId: booking.id },
+        io
+      );
+      await notifyUser(
+        booking.artisanUserId,
+        '⚖️ Dispute Escalated',
+        'Negotiation time expired. An admin will review the dispute.',
+        'dispute',
+        { disputeId: dispute.id, bookingId: booking.id },
+        io
+      );
+    }
+    escalated++;
+  }
+  return escalated;
 }
 
 // ── 5. Request Revision (from job-done → back to in-progress) ──
