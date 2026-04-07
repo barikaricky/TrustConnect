@@ -54,6 +54,7 @@ function AppContent() {
       <Stack.Screen name="customer-wallet" />
       <Stack.Screen name="transaction-history" />
       <Stack.Screen name="refunds" />
+      <Stack.Screen name="notifications" />
       <Stack.Screen name="post-job" />
       <Stack.Screen name="job-feed" />
       <Stack.Screen name="job-detail" />

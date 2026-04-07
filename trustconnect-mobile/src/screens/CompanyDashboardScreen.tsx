@@ -885,7 +885,7 @@ export default function CompanyDashboardScreen() {
               { icon: 'magnify', label: 'Find Pros', color: INFO, bg: '#E3F2FD', route: '/service-search' },
               { icon: 'wallet-outline', label: 'Wallet', color: SUCCESS, bg: SUCCESS_LIGHT, route: '/wallet' },
               { icon: 'account-group-outline', label: 'Workers', color: PURPLE, bg: '#EDE7F6', action: () => setBottomTab('workers') },
-              { icon: 'briefcase-plus-outline', label: 'Post Job', color: TEAL, bg: '#E0F2F1', action: () => { setBottomTab('jobs'); setShowPostJobModal(true); } },
+              { icon: 'video-plus-outline', label: 'Post Job', color: TEAL, bg: '#E0F2F1', route: '/post-job' },
             ] as any[]).map((a, i) => (
               <Animated.View key={i} entering={ZoomIn.delay(320 + i * 60).springify()}>
                 <Pressable

@@ -1341,10 +1341,10 @@ export default function ArtisanHomeScreen() {
                 </View>
                 <View style={styles.quickActionsGrid}>
                   {[
+                    { icon: 'briefcase-search-outline', label: 'Job Feed',    color: PURPLE,   bg: '#EDE7F6', action: () => router.push('/job-feed' as any) },
                     { icon: 'wallet-outline',         label: 'Wallet',       color: SUCCESS,  bg: '#E8F5E9', action: () => router.push('/wallet') },
                     { icon: 'message-text-outline',   label: 'Messages',     color: INFO,     bg: '#E3F2FD', action: () => router.push('/conversations') },
                     { icon: 'alert-decagram-outline', label: 'Disputes',     color: DANGER,   bg: '#FFEBEE', action: () => router.push('/dispute') },
-                    { icon: 'account-edit-outline',   label: 'Edit Profile', color: NAVY,     bg: '#E8EAF6', action: () => setBottomTab('profile') },
                   ].map((action) => (
                     <Pressable key={action.label} style={styles.quickActionCard} onPress={action.action}>
                       <View style={[styles.qaIcon, { backgroundColor: action.bg }]}>

@@ -842,6 +842,51 @@ export default function CustomerHomeScreen() {
             </LinearGradient>
           </Animated.View>
 
+          {/* ─── NEW: Video Job + Job Feed Action Cards ──────── */}
+          <Animated.View entering={FadeInDown.delay(200)} style={styles.actionCardsRow}>
+            <Pressable
+              style={[styles.actionCard, { backgroundColor: '#E8EAF6' }]}
+              onPress={() => router.push('/post-job' as any)}
+            >
+              <LinearGradient
+                colors={[NAVY, NAVY_LIGHT]}
+                style={styles.actionCardIcon}
+              >
+                <MaterialCommunityIcons name="video-plus" size={24} color="#fff" />
+              </LinearGradient>
+              <Text style={styles.actionCardTitle}>Post a Job</Text>
+              <Text style={styles.actionCardSub}>Video description</Text>
+            </Pressable>
+
+            <Pressable
+              style={[styles.actionCard, { backgroundColor: '#FFF8E1' }]}
+              onPress={() => router.push('/job-feed' as any)}
+            >
+              <LinearGradient
+                colors={[GOLD_DARK, GOLD]}
+                style={styles.actionCardIcon}
+              >
+                <MaterialCommunityIcons name="briefcase-search" size={24} color="#fff" />
+              </LinearGradient>
+              <Text style={styles.actionCardTitle}>Browse Jobs</Text>
+              <Text style={styles.actionCardSub}>Find services</Text>
+            </Pressable>
+
+            <Pressable
+              style={[styles.actionCard, { backgroundColor: '#E3F2FD' }]}
+              onPress={() => router.push('/conversations' as any)}
+            >
+              <LinearGradient
+                colors={[INFO, '#1976D2']}
+                style={styles.actionCardIcon}
+              >
+                <MaterialCommunityIcons name="message-text" size={24} color="#fff" />
+              </LinearGradient>
+              <Text style={styles.actionCardTitle}>Messages</Text>
+              <Text style={styles.actionCardSub}>Chat & invoices</Text>
+            </Pressable>
+          </Animated.View>
+
           {/* Urgent Help Search Bar */}
           <Animated.View entering={FadeInDown.delay(300)} style={styles.searchSection}>
             <View style={styles.searchContainer}>
@@ -899,13 +944,23 @@ export default function CustomerHomeScreen() {
                   <MaterialCommunityIcons name="phone" size={20} color="#FFFFFF" />
                   <Text style={styles.actionButtonText}>Call</Text>
                 </Pressable>
-                <Pressable style={[styles.actionButton, styles.chatButton]}>
+                <Pressable
+                  style={[styles.actionButton, styles.chatButton]}
+                  onPress={() => router.push({
+                    pathname: '/chat',
+                    params: {
+                      bookingId: String(activeJob.id),
+                      artisanName: activeJob.artisanName,
+                      artisanTrade: activeJob.trade,
+                    },
+                  })}
+                >
                   <MaterialCommunityIcons name="message-text" size={20} color="#1a237e" />
                   <Text style={[styles.actionButtonText, { color: '#1a237e' }]}>Chat</Text>
                 </Pressable>
               </View>
 
-              <Pressable style={styles.sosButton}>
+              <Pressable style={styles.sosButton} onPress={() => router.push('/dispute' as any)}>
                 <MaterialCommunityIcons name="alert-circle" size={16} color="#F44336" />
                 <Text style={styles.sosText}>Report Issue</Text>
               </Pressable>
@@ -1061,6 +1116,45 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: BG,
+  },
+  // ─── Action Cards Row ─────────────────────────────────────────
+  actionCardsRow: {
+    flexDirection: 'row',
+    paddingHorizontal: spacing.lg,
+    gap: 10,
+    marginBottom: 8,
+    marginTop: 4,
+  },
+  actionCard: {
+    flex: 1,
+    borderRadius: 14,
+    padding: 12,
+    alignItems: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  actionCardIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  actionCardTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1B2631',
+    textAlign: 'center',
+  },
+  actionCardSub: {
+    fontSize: 10,
+    color: '#78909C',
+    textAlign: 'center',
+    marginTop: 2,
   },
   // ─── Hero Header ──────────────────────────────────────────────
   heroHeader: {
