@@ -20,8 +20,15 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { Audio } from 'expo-av';
 import { useAuth } from '../services/AuthContext';
+
+// Lazy-load expo-av to prevent crash when native module is unavailable
+let Audio: any = null;
+try {
+  Audio = require('expo-av').Audio;
+} catch (e) {
+  console.warn('expo-av not available, audio playback disabled');
+}
 import { containsProfanity, PROFANITY_ALERT_TITLE, PROFANITY_ALERT_BODY } from '../utils/profanityFilter';
 import {
   getOrCreateConversation,
@@ -99,7 +106,7 @@ export default function ChatScreen() {
 
   // AI voice note playback
   const [playingAiId, setPlayingAiId] = useState<number | null>(null);
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const soundRef = useRef<any>(null);
 
   // Quote form state (artisan)
   const [showQuoteForm, setShowQuoteForm] = useState(false);
@@ -898,6 +905,7 @@ export default function ChatScreen() {
         return;
       }
 
+      if (!Audio) { Alert.alert('Audio Unavailable', 'Audio playback is not supported in this build.'); return; }
       await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
       const uri = audioUrl.startsWith('http')
         ? audioUrl

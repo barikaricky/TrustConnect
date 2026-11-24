@@ -5,11 +5,23 @@ import {
   Platform, Modal, Alert, StatusBar,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useVideoPlayer, VideoView } from 'expo-video';
 import { reelService, Reel, ReelComment } from '../services/reelService';
 import { useAuth } from '../services/AuthContext';
 import { API_BASE_URL } from '../config/api';
 import * as ImagePicker from 'expo-image-picker';
+
+// Lazy-load expo-video to prevent crash when native module is unavailable
+let useVideoPlayer: any = null;
+let VideoView: any = null;
+let videoAvailable = false;
+try {
+  const expoVideo = require('expo-video');
+  useVideoPlayer = expoVideo.useVideoPlayer;
+  VideoView = expoVideo.VideoView;
+  videoAvailable = true;
+} catch (e) {
+  console.warn('expo-video not available, video playback disabled');
+}
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const ITEM_HEIGHT = SCREEN_HEIGHT;
@@ -24,12 +36,14 @@ function ReelItem({
     ? reel.videoUrl
     : `${API_BASE_URL.replace('/api', '')}${reel.videoUrl}`;
 
-  const player = useVideoPlayer(videoUrl, (p) => {
+  // Only use video player hook if expo-video is available
+  const player = videoAvailable ? useVideoPlayer(videoUrl, (p: any) => {
     p.loop = true;
     p.muted = false;
-  });
+  }) : null;
 
   useEffect(() => {
+    if (!player) return;
     if (isActive) {
       player.play();
     } else {
@@ -41,12 +55,20 @@ function ReelItem({
 
   return (
     <View style={styles.reelContainer}>
-      <VideoView
-        player={player}
-        style={styles.video}
-        contentFit="cover"
-        nativeControls={false}
-      />
+      {videoAvailable && player ? (
+        <VideoView
+          player={player}
+          style={styles.video}
+          contentFit="cover"
+          nativeControls={false}
+        />
+      ) : (
+        <View style={[styles.video, { backgroundColor: '#1a1a2e', alignItems: 'center', justifyContent: 'center' }]}>
+          <Text style={{ fontSize: 48, marginBottom: 8 }}>🎬</Text>
+          <Text style={{ color: '#FFC107', fontSize: 14, fontWeight: '700' }}>{reel.caption || 'Video Reel'}</Text>
+          <Text style={{ color: '#888', fontSize: 12, marginTop: 4 }}>Video playback unavailable</Text>
+        </View>
+      )}
 
       {/* Overlay gradient */}
       <View style={styles.gradientOverlay} />

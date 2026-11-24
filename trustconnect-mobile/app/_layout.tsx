@@ -16,8 +16,9 @@ function AppContent() {
   }
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
+    <Stack initialRouteName="index" screenOptions={{ headerShown: false }}>
       <Stack.Screen name="index" />
+      <Stack.Screen name="loading-preview" />
       <Stack.Screen name="login" />
       <Stack.Screen name="customer-registration" />
       <Stack.Screen name="artisan-registration" />

@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { getDB, getNextSequence } from '../database/connection';
 
 const reelsCollection = () => getDB().collection('reels');
+const paramId = (req: Request) => parseInt(String(req.params.id));
 
 export class ReelController {
   // Create a new reel
@@ -80,7 +81,7 @@ export class ReelController {
   // Get single reel
   static async getReel(req: Request, res: Response) {
     try {
-      const id = parseInt(req.params.id);
+      const id = paramId(req);
       const reel = await reelsCollection().findOne({ id });
       if (!reel) return res.status(404).json({ success: false, message: 'Reel not found' });
 
@@ -100,7 +101,7 @@ export class ReelController {
       const user = (req as any).user;
       if (!user) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
-      const id = parseInt(req.params.id);
+      const id = paramId(req);
       const reel = await reelsCollection().findOne({ id });
       if (!reel) return res.status(404).json({ success: false, message: 'Reel not found' });
 
@@ -126,7 +127,7 @@ export class ReelController {
       const user = (req as any).user;
       if (!user) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
-      const id = parseInt(req.params.id);
+      const id = paramId(req);
       const { text } = req.body;
       if (!text || !text.trim()) {
         return res.status(400).json({ success: false, message: 'Comment text is required' });
@@ -146,7 +147,7 @@ export class ReelController {
         createdAt: new Date().toISOString(),
       };
 
-      await reelsCollection().updateOne({ id }, { $push: { comments: comment } });
+      await reelsCollection().updateOne({ id }, { $push: { comments: comment } as any });
       res.json({ success: true, comment });
     } catch (error) {
       console.error('Add comment error:', error);
@@ -160,7 +161,7 @@ export class ReelController {
       const user = (req as any).user;
       if (!user) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
-      const id = parseInt(req.params.id);
+      const id = paramId(req);
       const reel = await reelsCollection().findOne({ id });
       if (!reel) return res.status(404).json({ success: false, message: 'Reel not found' });
 
@@ -230,7 +231,7 @@ export class ReelController {
   // Admin: Flag/unflag a reel
   static async adminToggleFlag(req: Request, res: Response) {
     try {
-      const id = parseInt(req.params.id);
+      const id = paramId(req);
       const reel = await reelsCollection().findOne({ id });
       if (!reel) return res.status(404).json({ success: false, message: 'Reel not found' });
 
@@ -246,7 +247,7 @@ export class ReelController {
   // Admin: Remove a reel
   static async adminRemoveReel(req: Request, res: Response) {
     try {
-      const id = parseInt(req.params.id);
+      const id = paramId(req);
       const reel = await reelsCollection().findOne({ id });
       if (!reel) return res.status(404).json({ success: false, message: 'Reel not found' });
 
@@ -341,7 +342,7 @@ export class ReelController {
   // Admin: Get single job post detail
   static async adminGetJobDetail(req: Request, res: Response) {
     try {
-      const id = parseInt(req.params.id);
+      const id = paramId(req);
       const job = await getDB().collection('jobPosts').findOne({ id });
       if (!job) return res.status(404).json({ success: false, message: 'Job not found' });
 
